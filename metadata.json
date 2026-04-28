@@ -1,0 +1,7 @@
+{
+  "name": "Acumen ",
+  "description": "A comprehensive business application to manage products, clients, and orders for sales representatives. Features include order placement and tracking, real-time stock levels, client management, and visited client location tracking.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}
