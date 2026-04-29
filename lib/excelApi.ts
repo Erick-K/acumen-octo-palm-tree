@@ -1,72 +1,163 @@
-const API_BASE = '/api';
+type XLSXModule = typeof import('https://esm.sh/xlsx@0.18.5');
+
+let xlsxLoader: Promise<XLSXModule> | null = null;
+
+async function getXLSX(): Promise<XLSXModule> {
+  if (!xlsxLoader) {
+    xlsxLoader = import('https://esm.sh/xlsx@0.18.5');
+  }
+  return xlsxLoader;
+}
+
+async function readExcelRows(file: File): Promise<Record<string, unknown>[]> {
+  const XLSX = await getXLSX();
+  const buffer = await file.arrayBuffer();
+  const workbook = XLSX.read(buffer, { type: 'array' });
+  const sheetName = workbook.SheetNames[0];
+  if (!sheetName) return [];
+  const sheet = workbook.Sheets[sheetName];
+  return XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: '' });
+}
+
+function getRowValue(row: Record<string, unknown>, key: string): unknown {
+  const direct = row[key];
+  if (direct !== undefined) return direct;
+  const matchedKey = Object.keys(row).find(k => k.trim().toLowerCase() === key.trim().toLowerCase());
+  return matchedKey ? row[matchedKey] : '';
+}
 
 export async function importProductsExcel(file: File): Promise<{ data: import('../types').Product[] }> {
-  const formData = new FormData();
-  formData.append('file', file);
-  const res = await fetch(`${API_BASE}/excel/import/products`, {
-    method: 'POST',
-    body: formData,
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.error || `Import failed (${res.status})`);
+  const rows = await readExcelRows(file);
+  const headers = Object.keys(rows[0] || {}).map(h => String(h).trim().toLowerCase());
+  const required = ['id', 'name', 'description', 'price', 'stock', 'category'];
+  if (!required.every(h => headers.includes(h))) {
+    throw new Error(`Invalid Excel header. Must contain: ${required.join(', ')}`);
   }
-  return res.json();
+
+  const products = rows.map((row, i) => {
+    const id = parseInt(String(getRowValue(row, 'id')), 10);
+    const price = parseFloat(String(getRowValue(row, 'price')));
+    const stock = parseInt(String(getRowValue(row, 'stock')), 10);
+    const name = String(getRowValue(row, 'name')).trim();
+    const category = String(getRowValue(row, 'category')).trim();
+    if (isNaN(id) || isNaN(price) || isNaN(stock) || !name || !category) {
+      throw new Error(`Row ${i + 2}: Invalid or missing data`);
+    }
+
+    const image = String(getRowValue(row, 'imageUrl') || getRowValue(row, 'imageurl') || '').trim();
+
+    return {
+      id,
+      name,
+      description: String(getRowValue(row, 'description') || '').trim(),
+      price,
+      stock,
+      category,
+      imageUrl: image || undefined,
+    };
+  });
+
+  return { data: products };
 }
 
 type ImportedClientData = Omit<import('../types').Client, 'location' | 'visits'> & { address: string };
 
 export async function importClientsExcel(file: File): Promise<{ data: ImportedClientData[] }> {
-  const formData = new FormData();
-  formData.append('file', file);
-  const res = await fetch(`${API_BASE}/excel/import/clients`, {
-    method: 'POST',
-    body: formData,
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.error || `Import failed (${res.status})`);
+  const rows = await readExcelRows(file);
+  const headers = Object.keys(rows[0] || {}).map(h => String(h).trim().toLowerCase());
+  const required = ['id', 'company', 'name', 'salesrepid', 'address'];
+  if (!required.every(h => headers.includes(h))) {
+    throw new Error(`Invalid Excel header. Must contain: ${required.join(', ')}`);
   }
-  return res.json();
+
+  const clients = rows.map((row, i) => {
+    const id = parseInt(String(getRowValue(row, 'id')), 10);
+    const salesRepId = parseInt(String(getRowValue(row, 'salesRepId') || getRowValue(row, 'salesrepid')), 10);
+    const company = String(getRowValue(row, 'company')).trim();
+    const name = String(getRowValue(row, 'name')).trim();
+    const address = String(getRowValue(row, 'address')).trim();
+    if (isNaN(id) || isNaN(salesRepId) || !company || !name || !address) {
+      throw new Error(`Row ${i + 2}: Invalid or missing data`);
+    }
+
+    const companyPin = String(getRowValue(row, 'companyPin') || getRowValue(row, 'companypin') || '').trim();
+    const email = String(getRowValue(row, 'email') || '').trim();
+    const phone = String(getRowValue(row, 'phone') || '').trim();
+
+    return {
+      id,
+      company,
+      name,
+      salesRepId,
+      address,
+      companyPin: companyPin || undefined,
+      email: email || undefined,
+      phone: phone || undefined,
+    };
+  });
+
+  return { data: clients };
 }
 
 export async function exportProductsExcel(products: import('../types').Product[]): Promise<Blob> {
-  const res = await fetch(`${API_BASE}/excel/export/products`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ data: products }),
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.error || `Export failed (${res.status})`);
+  if (!Array.isArray(products) || products.length === 0) {
+    throw new Error('No products to export');
   }
-  return res.blob();
+  const XLSX = await getXLSX();
+  const headers = ['id', 'name', 'description', 'category', 'price', 'stock', 'imageUrl', 'variations'];
+  const rows = products.map(p => [
+    p.id,
+    p.name,
+    p.description,
+    p.category,
+    p.price,
+    p.stock,
+    p.imageUrl || '',
+    Array.isArray(p.variations) ? p.variations.map(v => `${v.name}:${(v.options || []).join('|')}`).join(';') : '',
+  ]);
+  const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Products');
+  const out = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+  return new Blob([out], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
 }
 
 export async function exportClientsExcel(clients: import('../types').Client[]): Promise<Blob> {
-  const res = await fetch(`${API_BASE}/excel/export/clients`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ data: clients }),
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.error || `Export failed (${res.status})`);
+  if (!Array.isArray(clients) || clients.length === 0) {
+    throw new Error('No clients to export');
   }
-  return res.blob();
+  const XLSX = await getXLSX();
+  const headers = ['id', 'company', 'name', 'salesRepId', 'email', 'phone', 'address', 'companyPin'];
+  const rows = clients.map(c => [
+    c.id,
+    c.company,
+    c.name,
+    c.salesRepId,
+    c.email || '',
+    c.phone || '',
+    c.location?.address || '',
+    c.companyPin || '',
+  ]);
+  const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Clients');
+  const out = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+  return new Blob([out], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
 }
 
 export async function exportOrdersExcel(orders: import('../types').Order[], clients: import('../types').Client[]): Promise<Blob> {
-  const res = await fetch(`${API_BASE}/excel/export/orders`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ orders, clients }),
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.error || `Export failed (${res.status})`);
+  if (!Array.isArray(orders) || orders.length === 0) {
+    throw new Error('No orders to export');
   }
-  return res.blob();
+  const XLSX = await getXLSX();
+  const clientMap = new Map((clients || []).map(c => [c.id, c]));
+  const headers = ['Order ID', 'Client', 'Date', 'Total', 'Status'];
+  const rows = orders.map(o => [o.id, clientMap.get(o.clientId)?.company || 'N/A', o.date, o.total, o.status]);
+  const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Orders');
+  const out = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+  return new Blob([out], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
 }
 
 function downloadBlob(blob: Blob, filename: string) {
