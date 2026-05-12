@@ -14,7 +14,14 @@ interface GeolocationState {
   position: GeolocationPosition | null;
 }
 
-export const useGeolocation = (enabled: boolean = true) => {
+export interface UseGeolocationOptions {
+  /** When true, uses watchPosition for live updates (sales rep on the move). */
+  watch?: boolean;
+}
+
+export const useGeolocation = (enabled: boolean, options?: UseGeolocationOptions) => {
+  const watch = options?.watch ?? false;
+
   const [state, setState] = useState<GeolocationState>({
     loading: false,
     error: null,
@@ -23,10 +30,17 @@ export const useGeolocation = (enabled: boolean = true) => {
 
   useEffect(() => {
     if (!enabled) {
+      setState({ loading: false, error: null, position: null });
       return;
     }
 
     setState(prev => ({ ...prev, loading: true, error: null }));
+
+    const geoOptions: PositionOptions = {
+      enableHighAccuracy: true,
+      maximumAge: 8000,
+      timeout: 20000,
+    };
 
     const onSuccess = (position: GeolocationPosition) => {
       setState({
@@ -45,22 +59,33 @@ export const useGeolocation = (enabled: boolean = true) => {
     };
 
     if (!navigator.geolocation) {
-      // Not a real error object, but indicates lack of support
       setState({
         loading: false,
         error: {
-            code: 0,
-            message: 'Geolocation is not supported by your browser.',
-            PERMISSION_DENIED: 1,
-            POSITION_UNAVAILABLE: 2,
-            TIMEOUT: 3,
-        } as any,
+          code: 0,
+          message: 'Geolocation is not supported by your browser.',
+          PERMISSION_DENIED: 1,
+          POSITION_UNAVAILABLE: 2,
+          TIMEOUT: 3,
+        } as GeolocationPositionError,
         position: null,
       });
-    } else {
-      navigator.geolocation.getCurrentPosition(onSuccess, onError);
+      return;
     }
-  }, [enabled]);
+
+    let watchId: number | undefined;
+    if (watch) {
+      watchId = navigator.geolocation.watchPosition(onSuccess, onError, geoOptions);
+    } else {
+      navigator.geolocation.getCurrentPosition(onSuccess, onError, geoOptions);
+    }
+
+    return () => {
+      if (watchId !== undefined) {
+        navigator.geolocation.clearWatch(watchId);
+      }
+    };
+  }, [enabled, watch]);
 
   return state;
 };
