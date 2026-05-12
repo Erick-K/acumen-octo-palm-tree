@@ -20,7 +20,6 @@ export const Header: React.FC<HeaderProps> = ({ title, isSidebarOpen, onToggleSi
     const [showPinModal, setShowPinModal] = useState(false);
     const [pinInput, setPinInput] = useState('');
     const [pinError, setPinError] = useState(false);
-    const [htmlDarkClassActive, setHtmlDarkClassActive] = useState(false);
 
     useEffect(() => {
         const timer = setInterval(() => {
@@ -28,17 +27,6 @@ export const Header: React.FC<HeaderProps> = ({ title, isSidebarOpen, onToggleSi
         }, 1000);
 
         return () => clearInterval(timer);
-    }, []);
-
-    useEffect(() => {
-        const updateHtmlDarkState = () => {
-            setHtmlDarkClassActive(document.documentElement.classList.contains('dark'));
-        };
-
-        updateHtmlDarkState();
-        const observer = new MutationObserver(updateHtmlDarkState);
-        observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
-        return () => observer.disconnect();
     }, []);
 
     useEffect(() => {
@@ -117,10 +105,6 @@ export const Header: React.FC<HeaderProps> = ({ title, isSidebarOpen, onToggleSi
                             {isDark ? 'Light' : 'Dark'}
                         </span>
                     </button>
-                    <span className="hidden md:inline-flex px-2 py-1 text-[10px] font-mono rounded border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300">
-                        t:{currentTheme} d:{isDark ? '1' : '0'} html:{htmlDarkClassActive ? '1' : '0'}
-                    </span>
-
                     <div className="w-px h-6 bg-gray-200 dark:bg-gray-700 mx-2 hidden sm:block"></div>
 
                     {onToggleClock && user && (

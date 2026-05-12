@@ -5,6 +5,7 @@ import { WarningIcon, ArrowDownTrayIcon } from './icons';
 import { ProductForm } from './ProductForm';
 import { StockChart } from './StockChart';
 import { importProductsExcel, exportProductsExcel, downloadExcel } from '../lib/excelApi';
+import { formatKes } from '../lib/formatCurrency';
 
 interface ProductsProps {
   products: Product[];
@@ -422,7 +423,7 @@ export const Products: React.FC<ProductsProps> = ({ products, onUpdateProduct, o
                                 )}
                             </td>
                             <td className="px-6 py-4 text-sm text-gray-500 whitespace-nowrap dark:text-gray-400">{product.category}</td>
-                            <td className="px-6 py-4 text-sm text-gray-500 whitespace-nowrap dark:text-gray-400">${product.price.toFixed(2)}</td>
+                            <td className="px-6 py-4 text-sm text-gray-500 whitespace-nowrap dark:text-gray-400">{formatKes(product.price)}</td>
                             <td className="px-6 py-4 whitespace-nowrap">
                                 <div className="flex items-center">
                                     <StockIndicator stock={product.stock} lowThreshold={lowStockThreshold} />

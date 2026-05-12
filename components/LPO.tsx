@@ -1,6 +1,7 @@
 
 import React, { useRef, useState } from 'react';
 import type { Order, Client, Product, User } from '../types';
+import { formatKes } from '../lib/formatCurrency';
 
 interface LPOProps {
   order: Order;
@@ -130,10 +131,11 @@ export const LPO: React.FC<LPOProps> = ({ order, client, products, salesRep, onC
     lines.push('');
     lines.push('Items:');
     items.forEach((item) => {
-      lines.push(`- ${item.productName}: ${item.quantity} x ${item.unitPrice.toFixed(2)} = ${(item.quantity * item.unitPrice).toFixed(2)}`);
+      const lineTotal = item.quantity * item.unitPrice;
+      lines.push(`- ${item.productName}: ${item.quantity} x ${formatKes(item.unitPrice)} = ${formatKes(lineTotal)}`);
     });
     lines.push('');
-    lines.push(`Total: ${computedTotal.toFixed(2)}`);
+    lines.push(`Total: ${formatKes(computedTotal)}`);
     lines.push('');
     termsList.forEach(term => lines.push(`- ${term}`));
     lines.push('');
@@ -359,10 +361,10 @@ export const LPO: React.FC<LPOProps> = ({ order, client, products, salesRep, onC
                           {isEditing ? <input type="number" min="0" value={item.quantity} onChange={(e) => updateItem(item.id, 'quantity', e.target.value)} className="w-20 border border-gray-300 rounded px-2 py-1 text-sm text-center" /> : item.quantity}
                         </td>
                         <td className="border border-gray-300 px-4 py-3 text-right text-sm text-gray-900 dark:text-white">
-                          {isEditing ? <input type="number" min="0" step="0.01" value={item.unitPrice} onChange={(e) => updateItem(item.id, 'unitPrice', e.target.value)} className="w-28 border border-gray-300 rounded px-2 py-1 text-sm text-right" /> : `$${item.unitPrice.toFixed(2)}`}
+                          {isEditing ? <input type="number" min="0" step="0.01" value={item.unitPrice} onChange={(e) => updateItem(item.id, 'unitPrice', e.target.value)} className="w-28 border border-gray-300 rounded px-2 py-1 text-sm text-right" /> : formatKes(item.unitPrice)}
                         </td>
                         <td className="border border-gray-300 px-4 py-3 text-right text-sm font-semibold text-gray-900 dark:text-white">
-                          ${itemTotal.toFixed(2)}
+                          {formatKes(itemTotal)}
                         </td>
                       </tr>
                     );
@@ -374,7 +376,7 @@ export const LPO: React.FC<LPOProps> = ({ order, client, products, salesRep, onC
                       TOTAL AMOUNT:
                     </td>
                     <td className="border border-gray-300 px-4 py-3 text-right text-lg text-gray-900 dark:text-white">
-                      ${computedTotal.toFixed(2)}
+                      {formatKes(computedTotal)}
                     </td>
                   </tr>
                 </tfoot>

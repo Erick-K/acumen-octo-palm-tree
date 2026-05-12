@@ -1,6 +1,7 @@
 
 import React, { useState, useMemo } from 'react';
 import type { Client, Product, Order, OrderItem } from '../types';
+import { formatKes } from '../lib/formatCurrency';
 
 interface OrderFormProps {
   clients: Client[];
@@ -110,7 +111,7 @@ export const OrderForm: React.FC<OrderFormProps> = ({ clients, products, salesRe
               <select id="product" value={productToAdd} onChange={(e) => setProductToAdd(Number(e.target.value))} className="block w-full px-3 py-2 mt-1 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-yellow-500 focus:border-yellow-500 sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white">
                 <option value="" disabled>-- Select a product --</option>
                 {products.filter(p => p.stock > 0).map(p => (
-                  <option key={p.id} value={p.id}>{p.name} (${p.price.toFixed(2)}) - {p.stock} in stock</option>
+                  <option key={p.id} value={p.id}>{p.name} ({formatKes(p.price)}) - {p.stock} in stock</option>
                 ))}
               </select>
             </div>
@@ -132,10 +133,10 @@ export const OrderForm: React.FC<OrderFormProps> = ({ clients, products, salesRe
                   <li key={item.productId} className="flex items-center justify-between p-3">
                     <div>
                       <p className="font-medium text-gray-900 dark:text-white">{product?.name}</p>
-                      <p className="text-sm text-gray-500 dark:text-gray-400">{item.quantity} x ${item.priceAtSale.toFixed(2)}</p>
+                      <p className="text-sm text-gray-500 dark:text-gray-400">{item.quantity} x {formatKes(item.priceAtSale)}</p>
                     </div>
                     <div className="flex items-center space-x-4">
-                        <p className="font-medium text-gray-900 dark:text-white">${(item.quantity * item.priceAtSale).toFixed(2)}</p>
+                        <p className="font-medium text-gray-900 dark:text-white">{formatKes(item.quantity * item.priceAtSale)}</p>
                         <button type="button" onClick={() => handleRemoveItem(item.productId)} className="text-red-500 hover:text-red-700">&times;</button>
                     </div>
                   </li>
@@ -143,7 +144,7 @@ export const OrderForm: React.FC<OrderFormProps> = ({ clients, products, salesRe
               })}
               <li className="flex items-center justify-between p-3 font-bold bg-gray-50 dark:bg-gray-700">
                 <p className="text-gray-900 dark:text-white">Total</p>
-                <p className="text-gray-900 dark:text-white">${total.toFixed(2)}</p>
+                <p className="text-gray-900 dark:text-white">{formatKes(total)}</p>
               </li>
             </ul>
           </div>

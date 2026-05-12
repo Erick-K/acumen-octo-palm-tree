@@ -4,6 +4,7 @@ import type { Client, Visit, User, Order } from '../types';
 import { CalendarDaysIcon, PencilSquareIcon, EnvelopeIcon, PhoneIcon } from './icons';
 import { ClientForm } from './ClientForm';
 import { importClientsExcel, exportClientsExcel, downloadExcel } from '../lib/excelApi';
+import { formatKes } from '../lib/formatCurrency';
 
 interface ClientsProps {
   clients: Client[];
@@ -173,7 +174,7 @@ const ClientDetails: React.FC<{
                                         ? 'bg-red-100 text-red-800 border-red-200 dark:bg-red-900/30 dark:text-red-300 dark:border-red-800'
                                         : 'bg-green-100 text-green-800 border-green-200 dark:bg-green-900/30 dark:text-green-300 dark:border-green-800'
                                 }`}>
-                                    Outstanding: {outstandingBalance.toFixed(2)}
+                                    Outstanding: {formatKes(outstandingBalance)}
                                 </span>
                             </div>
                         </div>

@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import type { Client, Product, Order, Task, ClockLog } from '../types';
+import { formatKes } from '../lib/formatCurrency';
 import { ClientMap } from './ClientMap';
 
 interface DashboardProps {
@@ -97,7 +98,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ clients, products, orders,
                                         <tr key={order.id}>
                                             <td className="px-6 py-4 text-sm font-medium text-gray-900 whitespace-nowrap dark:text-white">{order.id}</td>
                                             <td className="px-6 py-4 text-sm text-gray-500 whitespace-nowrap dark:text-gray-400">{clients.find(c => c.id === order.clientId)?.company || 'N/A'}</td>
-                                            <td className="px-6 py-4 text-sm text-gray-500 whitespace-nowrap dark:text-gray-400">${order.total.toFixed(2)}</td>
+                                            <td className="px-6 py-4 text-sm text-gray-500 whitespace-nowrap dark:text-gray-400">{formatKes(order.total)}</td>
                                             <td className="px-6 py-4 whitespace-nowrap">
                                                 <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getOrderStatusColor(order.status)}`}>
                                                     {order.status}

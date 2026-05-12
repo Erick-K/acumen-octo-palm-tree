@@ -4,6 +4,7 @@ import type { Order, Client, Product, OrderItem, User } from '../types';
 import { OrderForm } from './OrderForm';
 import { WarningIcon, TrashIcon, PencilSquareIcon } from './icons';
 import { exportOrdersExcel, downloadExcel } from '../lib/excelApi';
+import { formatKes } from '../lib/formatCurrency';
 import { LPO } from './LPO';
 
 interface OrdersProps {
@@ -175,9 +176,9 @@ export const Orders: React.FC<OrdersProps> = ({ orders, clients, products, sales
         if (newOutstanding > MAX_OUTSTANDING_PER_CLIENT) {
             alert(
                 `This customer has reached the order limit.\n\n` +
-                `Current outstanding: ${existingOutstanding.toFixed(2)}\n` +
-                `This order total: ${orderData.total.toFixed(2)}\n` +
-                `Limit: ${MAX_OUTSTANDING_PER_CLIENT.toFixed(2)}`
+                `Current outstanding: ${formatKes(existingOutstanding)}\n` +
+                `This order total: ${formatKes(orderData.total)}\n` +
+                `Limit: ${formatKes(MAX_OUTSTANDING_PER_CLIENT)}`
             );
             return;
         }
@@ -372,7 +373,7 @@ export const Orders: React.FC<OrdersProps> = ({ orders, clients, products, sales
                             <td className="px-6 py-4 text-sm font-medium text-gray-900 whitespace-nowrap dark:text-white">{order.id}</td>
                             <td className="px-6 py-4 text-sm text-gray-500 whitespace-nowrap dark:text-gray-400">{client?.company || 'N/A'}</td>
                             <td className="px-6 py-4 text-sm text-gray-500 whitespace-nowrap dark:text-gray-400">{order.date}</td>
-                            <td className="px-6 py-4 text-sm text-gray-500 whitespace-nowrap dark:text-gray-400">${order.total.toFixed(2)}</td>
+                            <td className="px-6 py-4 text-sm text-gray-500 whitespace-nowrap dark:text-gray-400">{formatKes(order.total)}</td>
                             <td className="px-6 py-4 whitespace-nowrap">
                                 <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getOrderStatusColor(order.status)}`}>
                                     {order.status}

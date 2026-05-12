@@ -42,7 +42,13 @@ export const UserProfile: React.FC<UserProfileProps> = ({ user, onUpdateUser, cl
   };
 
   const handlePrefChange = (field: keyof UserPreferences, value: any) => {
-    setPrefs(prev => ({ ...prev, [field]: value }));
+    setPrefs(prev => {
+      const updatedPrefs = { ...prev, [field]: value };
+      if (field === 'theme') {
+        onUpdateUser({ preferences: updatedPrefs });
+      }
+      return updatedPrefs;
+    });
   };
 
   const handleSubmit = (e: React.FormEvent) => {

@@ -186,7 +186,7 @@ export const ProductForm: React.FC<ProductFormProps> = ({ initialProduct, onSave
             />
           </div>
           <div>
-            <label htmlFor="price" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Price</label>
+            <label htmlFor="price" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Price (KES)</label>
             <input
               type="number"
               id="price"
