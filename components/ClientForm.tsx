@@ -1,6 +1,7 @@
 
 import React, { useState } from 'react';
 import type { Client, User } from '../types';
+import { KENYAN_ADDRESS_SUGGESTIONS } from '../data/kenyanLocations';
 
 interface ClientFormProps {
   onAddClient: (newClient: Omit<Client, 'id' | 'location' | 'visits'> & { address: string, companyPin?: string }) => void;
@@ -101,14 +102,34 @@ export const ClientForm: React.FC<ClientFormProps> = ({ onAddClient, onCancel, s
         </div>
         <div>
             <label htmlFor="address" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Address</label>
-            <input type="text" id="address" value={address} onChange={(e) => setAddress(e.target.value)} className="input-field" required />
+            <input
+              type="text"
+              id="address"
+              list="kenya-town-address-hints"
+              value={address}
+              onChange={(e) => setAddress(e.target.value)}
+              className="input-field"
+              placeholder="Town, County, Kenya (pick a suggestion or type your own)"
+              required
+            />
+            <datalist id="kenya-town-address-hints">
+              {KENYAN_ADDRESS_SUGGESTIONS.map(line => (
+                <option key={line} value={line} />
+              ))}
+            </datalist>
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Suggestions cover major towns in all 47 counties.</p>
         </div>
         {userRole === 'Admin' && (
             <div>
                 <label htmlFor="salesRep" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Assign Sales Representative</label>
                 <select id="salesRep" value={salesRepId} onChange={(e) => setSalesRepId(Number(e.target.value))} className="input-field" required>
                     {salesReps.map(rep => (
-                        <option key={rep.id} value={rep.id}>{rep.name}</option>
+                        <option key={rep.id} value={rep.id}>
+                          {rep.name}
+                          {rep.workLocation?.town && rep.workLocation?.county
+                            ? ` — ${rep.workLocation.town}, ${rep.workLocation.county}`
+                            : ''}
+                        </option>
                     ))}
                 </select>
             </div>

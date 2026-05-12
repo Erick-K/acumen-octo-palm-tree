@@ -1,8 +1,9 @@
 
-import React, { useState, useMemo } from 'react';
-import type { User, UserPreferences } from '../types';
+import React, { useState, useMemo, useEffect } from 'react';
+import type { User, UserPreferences, UserWorkLocation } from '../types';
 import { Page } from '../types';
 import { PencilSquareIcon, Cog6ToothIcon, WarningIcon, CloseIcon } from './icons';
+import { WorkLocationPicker } from './WorkLocationPicker';
 
 interface UserManagementProps {
   users: User[];
@@ -29,6 +30,8 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, currentUs
     pinNumber: '1234',
     role: 'Sales Representative' as User['role']
   });
+  const [newUserWorkLocation, setNewUserWorkLocation] = useState<UserWorkLocation>({ county: '', town: '' });
+  const [territoryDraft, setTerritoryDraft] = useState<UserWorkLocation>({ county: '', town: '' });
 
   // Filtering states
   const [roleFilter, setRoleFilter] = useState<'All' | 'Admin' | 'Sales Representative'>('All');
@@ -93,10 +96,21 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, currentUs
       alert('Name, username, and password are required.');
       return;
     }
-    onAddUser(newUser);
+    onAddUser({
+      ...newUser,
+      workLocation:
+        newUserWorkLocation.county && newUserWorkLocation.town ? newUserWorkLocation : undefined,
+    });
     setShowCreateModal(false);
     setNewUser({ name: '', username: '', password: '', pinNumber: '1234', role: 'Sales Representative' });
+    setNewUserWorkLocation({ county: '', town: '' });
   };
+
+  useEffect(() => {
+    if (editingPrefsUserId == null) return;
+    const u = users.find(x => x.id === editingPrefsUserId);
+    setTerritoryDraft(u?.workLocation ?? { county: '', town: '' });
+  }, [editingPrefsUserId]);
 
   const requestSort = (key: SortKey) => {
     let direction: 'asc' | 'desc' = 'asc';
@@ -267,6 +281,9 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, currentUs
                     Role {getSortIcon('role')}
                   </div>
                 </th>
+                <th className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider dark:text-gray-400">
+                  Territory (Kenya)
+                </th>
                 <th 
                   onClick={() => requestSort('status')}
                   className="px-6 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider dark:text-gray-400 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors group"
@@ -324,6 +341,15 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, currentUs
                         <option value="Admin">Admin</option>
                         <option value="Sales Representative">Sales Rep</option>
                       </select>
+                    </td>
+                    <td className="px-6 py-4 text-xs text-gray-600 dark:text-gray-300 max-w-[11rem]">
+                      {user.workLocation?.town && user.workLocation?.county ? (
+                        <span className="line-clamp-2" title={`${user.workLocation.addressLine ? user.workLocation.addressLine + ' · ' : ''}${user.workLocation.town}, ${user.workLocation.county}`}>
+                          {user.workLocation.town}, {user.workLocation.county}
+                        </span>
+                      ) : (
+                        <span className="text-gray-400">—</span>
+                      )}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span className={`flex items-center text-xs font-medium ${user.isClockedIn ? 'text-green-500' : 'text-gray-400'}`}>
@@ -395,7 +421,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, currentUs
                   </tr>
                   {showPrefs && (
                     <tr className="bg-blue-50/50 dark:bg-blue-900/10">
-                        <td colSpan={5} className="px-6 py-4 border-b border-gray-100 dark:border-gray-700">
+                        <td colSpan={6} className="px-6 py-4 border-b border-gray-100 dark:border-gray-700">
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 animate-in slide-in-from-top-2 duration-200">
                                 <div>
                                     <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Theme Preference</label>
@@ -444,6 +470,29 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, currentUs
                                     </select>
                                 </div>
                             </div>
+                            <div className="mt-6 pt-6 border-t border-blue-200/60 dark:border-blue-800/40">
+                              <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase mb-2">
+                                Territory — county, town &amp; optional street
+                              </label>
+                              <WorkLocationPicker
+                                idPrefix={`um-wl-${user.id}`}
+                                value={territoryDraft}
+                                onChange={setTerritoryDraft}
+                              />
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (editingPrefsUserId == null) return;
+                                  onUpdateUser(editingPrefsUserId, {
+                                    workLocation:
+                                      territoryDraft.county && territoryDraft.town ? territoryDraft : undefined,
+                                  });
+                                }}
+                                className="mt-3 px-3 py-1.5 text-xs font-bold rounded-md bg-yellow-500 text-blue-900 hover:bg-yellow-400 focus:outline-none focus:ring-2 focus:ring-yellow-500"
+                              >
+                                Save territory
+                              </button>
+                            </div>
                         </td>
                     </tr>
                   )}
@@ -451,7 +500,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, currentUs
                 );
               }) : (
                 <tr>
-                  <td colSpan={5} className="px-6 py-12 text-center text-gray-500 dark:text-gray-400 italic">
+                  <td colSpan={6} className="px-6 py-12 text-center text-gray-500 dark:text-gray-400 italic">
                     No users match your current filter criteria.
                   </td>
                 </tr>
@@ -464,7 +513,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, currentUs
       {/* Create User Modal */}
       {showCreateModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-50 backdrop-blur-sm">
-              <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-md overflow-hidden animate-in zoom-in duration-200">
+              <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto overflow-hidden animate-in zoom-in duration-200">
                   <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
                       <h3 className="text-lg font-bold text-gray-900 dark:text-white">Create Team Member</h3>
                       <button onClick={() => setShowCreateModal(false)} className="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">
@@ -525,6 +574,16 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, currentUs
                               <option value="Sales Representative">Sales Representative</option>
                               <option value="Admin">Admin</option>
                           </select>
+                      </div>
+                      <div className="border-t border-gray-200 dark:border-gray-600 pt-4">
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                            Primary territory (optional)
+                          </label>
+                          <WorkLocationPicker
+                            idPrefix="new-user-wl"
+                            value={newUserWorkLocation}
+                            onChange={setNewUserWorkLocation}
+                          />
                       </div>
                       <div className="pt-4 flex justify-end space-x-3">
                           <button

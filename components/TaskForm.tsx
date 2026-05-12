@@ -83,7 +83,12 @@ export const TaskForm: React.FC<TaskFormProps> = ({ onAddTask, onCancel, salesRe
               className="input-field"
             >
               {salesReps.map(rep => (
-                <option key={rep.id} value={rep.id}>{rep.name}</option>
+                <option key={rep.id} value={rep.id}>
+                  {rep.name}
+                  {rep.workLocation?.town && rep.workLocation?.county
+                    ? ` — ${rep.workLocation.town}, ${rep.workLocation.county}`
+                    : ''}
+                </option>
               ))}
             </select>
           </div>

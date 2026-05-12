@@ -5,6 +5,7 @@ import { CalendarDaysIcon, PencilSquareIcon, EnvelopeIcon, PhoneIcon } from './i
 import { ClientForm } from './ClientForm';
 import { importClientsExcel, exportClientsExcel, downloadExcel } from '../lib/excelApi';
 import { formatKes } from '../lib/formatCurrency';
+import { KENYAN_ADDRESS_SUGGESTIONS } from '../data/kenyanLocations';
 
 interface ClientsProps {
   clients: Client[];
@@ -125,7 +126,20 @@ const ClientDetails: React.FC<{
                         </div>
                         <div className="md:col-span-2">
                             <label htmlFor="address" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Address</label>
-                            <input type="text" name="address" id="address" value={editedClient.location.address} onChange={handleAddressChange} className="input-field" />
+                            <input
+                              type="text"
+                              name="address"
+                              id="address"
+                              list="kenya-address-hints-client-edit"
+                              value={editedClient.location.address}
+                              onChange={handleAddressChange}
+                              className="input-field"
+                            />
+                            <datalist id="kenya-address-hints-client-edit">
+                              {KENYAN_ADDRESS_SUGGESTIONS.map(line => (
+                                <option key={line} value={line} />
+                              ))}
+                            </datalist>
                         </div>
                         <div className="md:col-span-2">
                             <label className="flex items-center space-x-2 cursor-pointer">
@@ -490,7 +504,12 @@ export const Clients: React.FC<ClientsProps> = ({ clients, orders, salesReps, on
                             >
                                 <option value="all">All Reps</option>
                                 {salesReps.map(rep => (
-                                    <option key={rep.id} value={rep.id}>{rep.name}</option>
+                                    <option key={rep.id} value={rep.id}>
+                                      {rep.name}
+                                      {rep.workLocation?.town && rep.workLocation?.county
+                                        ? ` — ${rep.workLocation.town}, ${rep.workLocation.county}`
+                                        : ''}
+                                    </option>
                                 ))}
                             </select>
                         </div>

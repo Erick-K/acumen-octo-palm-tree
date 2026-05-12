@@ -36,7 +36,13 @@ const App: React.FC = () => {
   const [users, setUsers] = useState<User[]>(() => {
     try {
       const saved = localStorage.getItem('users');
-      return saved ? JSON.parse(saved) : MOCK_USERS;
+      const parsed = saved ? JSON.parse(saved) : MOCK_USERS;
+      const base = Array.isArray(parsed) ? parsed : MOCK_USERS;
+      return base.map((u: User) => {
+        if (u.workLocation?.county && u.workLocation?.town) return u;
+        const fromMock = MOCK_USERS.find(m => m.id === u.id);
+        return fromMock?.workLocation ? { ...u, workLocation: fromMock.workLocation } : u;
+      });
     } catch (e) {
       return MOCK_USERS;
     }

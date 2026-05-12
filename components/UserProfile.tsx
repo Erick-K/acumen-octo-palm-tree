@@ -1,7 +1,8 @@
 
 import React, { useState, useEffect } from 'react';
-import type { User, ClockLog, UserPreferences } from '../types';
+import type { User, ClockLog, UserPreferences, UserWorkLocation } from '../types';
 import { Page } from '../types';
+import { WorkLocationPicker } from './WorkLocationPicker';
 
 interface UserProfileProps {
   user: User;
@@ -24,6 +25,7 @@ export const UserProfile: React.FC<UserProfileProps> = ({ user, onUpdateUser, cl
   };
   
   const [prefs, setPrefs] = useState<UserPreferences>(user.preferences || defaultPrefs);
+  const [workLocation, setWorkLocation] = useState<UserWorkLocation | undefined>(user.workLocation);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   useEffect(() => {
@@ -34,6 +36,7 @@ export const UserProfile: React.FC<UserProfileProps> = ({ user, onUpdateUser, cl
           pinNumber: user.pinNumber || '',
       });
       setPrefs(user.preferences || defaultPrefs);
+      setWorkLocation(user.workLocation);
   }, [user]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -63,7 +66,11 @@ export const UserProfile: React.FC<UserProfileProps> = ({ user, onUpdateUser, cl
         username: formData.username,
         avatarUrl: formData.avatarUrl,
         pinNumber: formData.pinNumber,
-        preferences: prefs
+        preferences: prefs,
+        workLocation:
+          workLocation?.county && workLocation?.town
+            ? workLocation
+            : undefined,
     });
     
     setMessage({ type: 'success', text: 'Profile updated successfully.' });
@@ -79,7 +86,7 @@ export const UserProfile: React.FC<UserProfileProps> = ({ user, onUpdateUser, cl
         <div className="px-4 py-5 sm:p-6">
             <h3 className="text-lg leading-6 font-bold text-gray-900 dark:text-white">Account Information</h3>
             <div className="mt-2 max-w-xl text-sm text-gray-500 dark:text-gray-400">
-                <p>Update your personal information, profile picture, and security PIN.</p>
+                <p>Update your personal information, profile picture, security PIN, and your primary Kenya territory.</p>
             </div>
             <form className="mt-5 space-y-6" onSubmit={handleSubmit}>
                 <div className="flex items-center space-x-6">
@@ -150,6 +157,17 @@ export const UserProfile: React.FC<UserProfileProps> = ({ user, onUpdateUser, cl
                             className="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-yellow-500 focus:border-yellow-500 sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white outline-none font-mono"
                         />
                         <p className="mt-1 text-[10px] text-gray-400 uppercase font-bold">4-digit code for shift verification</p>
+                    </div>
+
+                    <div className="col-span-2 border-t border-gray-100 dark:border-gray-700 pt-6">
+                        <h4 className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-wider mb-3">
+                            Primary territory (Kenya)
+                        </h4>
+                        <WorkLocationPicker
+                            idPrefix="profile-wl"
+                            value={workLocation}
+                            onChange={setWorkLocation}
+                        />
                     </div>
 
                     <div className="col-span-2">

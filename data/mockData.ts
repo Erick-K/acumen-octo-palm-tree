@@ -2,15 +2,15 @@
 import type { User, Client, Product, Order, Task } from '../types';
 
 export const MOCK_USERS: User[] = [
-  { id: 1, name: 'Erick Kariuki', username: 'erick', password: 'Peniel30', pinNumber: '1234', role: 'Admin' },
-  { id: 8, name: 'Joyce Mukami', username: 'joyce', password: 'Peniel30', pinNumber: '1234', role: 'Admin' },
-  { id: 9, name: 'Operations Manager', username: 'Paul', password: 'Peniel30', pinNumber: '1234', role: 'Admin' },
-  { id: 2, name: 'Sophie Namunyala', username: 'Sophie Namunyala', password: 'Peniel@2026', pinNumber: '1234', role: 'Sales Representative' },
-  { id: 3, name: 'Boaz Nadebu', username: 'Boaz Nadebu', password: 'Peniel@2026', pinNumber: '1234', role: 'Sales Representative' },
-  { id: 4, name: 'Cicilia Nyokabi', username: 'Cicilia Nyokabi', password: 'Peniel@2026', pinNumber: '1234', role: 'Sales Representative' },
-  { id: 5, name: 'Theresa Gichuhi', username: 'Theresa Gichuhi', password: 'Peniel@2026', pinNumber: '1234', role: 'Sales Representative' },
-  { id: 6, name: 'Shiro', username: 'Shiro', password: 'Peniel@2026', pinNumber: '1234', role: 'Sales Representative' },
-  { id: 7, name: 'Peace Monica', username: 'Peace Monica', password: 'Peniel@2026', pinNumber: '1234', role: 'Sales Representative' },
+  { id: 1, name: 'Erick Kariuki', username: 'erick', password: 'Peniel30', pinNumber: '1234', role: 'Admin', workLocation: { county: 'Nairobi City', town: 'Westlands', addressLine: 'Office HQ' } },
+  { id: 8, name: 'Joyce Mukami', username: 'joyce', password: 'Peniel30', pinNumber: '1234', role: 'Admin', workLocation: { county: 'Kiambu', town: 'Thika', addressLine: 'Thika Road corridor' } },
+  { id: 9, name: 'Operations Manager', username: 'Paul', password: 'Peniel30', pinNumber: '1234', role: 'Admin', workLocation: { county: 'Nairobi City', town: 'Nairobi CBD', addressLine: 'Central operations' } },
+  { id: 2, name: 'Sophie Namunyala', username: 'Sophie Namunyala', password: 'Peniel@2026', pinNumber: '1234', role: 'Sales Representative', workLocation: { county: 'Nakuru', town: 'Nakuru', addressLine: 'Rift Valley territory' } },
+  { id: 3, name: 'Boaz Nadebu', username: 'Boaz Nadebu', password: 'Peniel@2026', pinNumber: '1234', role: 'Sales Representative', workLocation: { county: 'Mombasa', town: 'Nyali', addressLine: 'Coast region' } },
+  { id: 4, name: 'Cicilia Nyokabi', username: 'Cicilia Nyokabi', password: 'Peniel@2026', pinNumber: '1234', role: 'Sales Representative', workLocation: { county: 'Kisumu', town: 'Kisumu', addressLine: 'Nyanza territory' } },
+  { id: 5, name: 'Theresa Gichuhi', username: 'Theresa Gichuhi', password: 'Peniel@2026', pinNumber: '1234', role: 'Sales Representative', workLocation: { county: 'Uasin Gishu', town: 'Eldoret', addressLine: 'North Rift' } },
+  { id: 6, name: 'Shiro', username: 'Shiro', password: 'Peniel@2026', pinNumber: '1234', role: 'Sales Representative', workLocation: { county: 'Meru', town: 'Meru', addressLine: 'Upper Eastern' } },
+  { id: 7, name: 'Peace Monica', username: 'Peace Monica', password: 'Peniel@2026', pinNumber: '1234', role: 'Sales Representative', workLocation: { county: 'Machakos', town: 'Machakos', addressLine: 'Eastern corridor' } },
 ];
 
 export const MOCK_CLIENTS: Client[] = [

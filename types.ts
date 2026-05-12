@@ -5,6 +5,14 @@ export interface UserPreferences {
   defaultPage: Page;
 }
 
+/** Primary territory / base location for sales reps and admins (Kenya). */
+export interface UserWorkLocation {
+  county: string;
+  town: string;
+  /** Optional street, building, or landmark */
+  addressLine?: string;
+}
+
 export interface User {
   id: number;
   name: string;
@@ -16,6 +24,7 @@ export interface User {
   isClockedIn?: boolean;
   isActive?: boolean;
   preferences?: UserPreferences;
+  workLocation?: UserWorkLocation;
 }
 
 export interface ClockLog {
