@@ -428,12 +428,25 @@ const App: React.FC = () => {
   const handleImportProducts = (importedProducts: Product[]) => {
     setProducts(currentProducts => {
       const productsMap = new Map<number, Product>(currentProducts.map(p => [p.id, p]));
-      importedProducts.forEach(p => {
+      const seenImportedIds = new Set<number>();
+      let nextGeneratedId = Math.max(0, ...currentProducts.map(p => p.id), ...importedProducts.map(p => p.id));
+      const normalizedImportedProducts = importedProducts.map(product => {
+        if (!seenImportedIds.has(product.id)) {
+          seenImportedIds.add(product.id);
+          return product;
+        }
+
+        const nextProduct = { ...product, id: ++nextGeneratedId };
+        seenImportedIds.add(nextProduct.id);
+        return nextProduct;
+      });
+
+      normalizedImportedProducts.forEach(p => {
         if (p && typeof p.id === 'number') {
             productsMap.set(p.id, p);
         }
       });
-      const importedIds = new Set(importedProducts.map(p => p.id));
+      const importedIds = new Set(normalizedImportedProducts.map(p => p.id));
       return Array.from(productsMap.values()).sort((a, b) => {
         const aImported = importedIds.has(a.id);
         const bImported = importedIds.has(b.id);

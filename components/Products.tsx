@@ -60,6 +60,56 @@ const parseCsvLine = (line: string): string[] => {
   return values;
 };
 
+const parseCsvRows = (text: string): string[][] => {
+  const rows: string[][] = [];
+  let currentRow: string[] = [];
+  let current = '';
+  let inQuotes = false;
+  const normalized = text.replace(/^\uFEFF/, '');
+
+  for (let i = 0; i < normalized.length; i += 1) {
+    const char = normalized[i];
+    const nextChar = normalized[i + 1];
+
+    if (char === '"' && inQuotes && nextChar === '"') {
+      current += '"';
+      i += 1;
+      continue;
+    }
+
+    if (char === '"') {
+      inQuotes = !inQuotes;
+      continue;
+    }
+
+    if (char === ',' && !inQuotes) {
+      currentRow.push(current);
+      current = '';
+      continue;
+    }
+
+    if ((char === '\n' || char === '\r') && !inQuotes) {
+      if (char === '\r' && nextChar === '\n') i += 1;
+      currentRow.push(current);
+      if (currentRow.some(value => value.trim().length > 0)) {
+        rows.push(currentRow);
+      }
+      currentRow = [];
+      current = '';
+      continue;
+    }
+
+    current += char;
+  }
+
+  currentRow.push(current);
+  if (currentRow.some(value => value.trim().length > 0)) {
+    rows.push(currentRow);
+  }
+
+  return rows;
+};
+
 const normalizeCsvValues = (headers: string[], values: string[]): string[] => {
   if (values.length <= headers.length) return values;
 
@@ -72,6 +122,11 @@ const normalizeCsvValues = (headers: string[], values: string[]): string[] => {
     values.slice(descriptionIndex, descriptionIndex + extraValueCount + 1).join(',').trim(),
     ...values.slice(descriptionIndex + extraValueCount + 1),
   ];
+};
+
+const parseImportNumber = (value: unknown): number => {
+  const normalized = String(value ?? '').replace(/,/g, '').replace(/[^\d.-]/g, '');
+  return Number(normalized);
 };
 
 export const Products: React.FC<ProductsProps> = ({ products, onUpdateProduct, onAddProduct, onImportProducts, userRole }) => {
@@ -185,25 +240,24 @@ export const Products: React.FC<ProductsProps> = ({ products, onUpdateProduct, o
             return;
         }
         try {
-            const lines = text
-              .replace(/^\uFEFF/, '')
-              .split(/\r?\n/)
-              .filter(line => line.trim().length > 0);
-            const headerLine = lines.shift()?.trim();
-            if (!headerLine) throw new Error('CSV file is empty or has no header.');
-            const headers = parseCsvLine(headerLine).map(h => h.trim().toLowerCase());
-            const expectedHeaders = ['id', 'name', 'price', 'stock', 'category'];
+            const rows = parseCsvRows(text);
+            const headerRow = rows.shift();
+            if (!headerRow) throw new Error('CSV file is empty or has no header.');
+            const headers = headerRow.map(h => h.trim().toLowerCase());
+            const expectedHeaders = ['name', 'price', 'stock', 'category'];
             const hasAllHeaders = expectedHeaders.every(h => headers.includes(h));
             if (!hasAllHeaders) throw new Error(`Invalid CSV header. Must contain: ${expectedHeaders.join(', ')}`);
-            const importedProducts: Product[] = lines.map((line, index) => {
-                const values = normalizeCsvValues(headers, parseCsvLine(line));
+            let nextGeneratedId = Math.max(0, ...products.map(p => p.id), Date.now());
+            const importedProducts: Product[] = rows.map((row, index) => {
+                const values = normalizeCsvValues(headers, row);
                 if (values.length < headers.length) throw new Error(`Row ${index + 2}: Column count mismatch.`);
                 const productData: any = {};
                 headers.forEach((header, i) => { productData[header] = values[i]?.trim(); });
-                const id = parseInt(productData.id, 10);
-                const price = parseFloat(productData.price);
-                const stock = parseInt(productData.stock, 10);
-                if (isNaN(id) || isNaN(price) || isNaN(stock) || !productData.name || !productData.category) {
+                const parsedId = parseInt(productData.id, 10);
+                const id = Number.isFinite(parsedId) ? parsedId : ++nextGeneratedId;
+                const price = parseImportNumber(productData.price);
+                const stock = Math.trunc(parseImportNumber(productData.stock));
+                if (isNaN(price) || isNaN(stock) || !productData.name || !productData.category) {
                     throw new Error(`Row ${index + 2}: Invalid or missing data.`);
                 }
                 return { id, name: productData.name, description: productData.description || '', price, stock, category: productData.category, imageUrl: productData.imageurl || undefined };

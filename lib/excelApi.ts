@@ -26,21 +26,28 @@ function getRowValue(row: Record<string, unknown>, key: string): unknown {
   return matchedKey ? row[matchedKey] : '';
 }
 
+function parseImportNumber(value: unknown): number {
+  const normalized = String(value ?? '').replace(/,/g, '').replace(/[^\d.-]/g, '');
+  return Number(normalized);
+}
+
 export async function importProductsExcel(file: File): Promise<{ data: import('../types').Product[] }> {
   const rows = await readExcelRows(file);
   const headers = Object.keys(rows[0] || {}).map(h => String(h).trim().toLowerCase());
-  const required = ['id', 'name', 'description', 'price', 'stock', 'category'];
+  const required = ['name', 'price', 'stock', 'category'];
   if (!required.every(h => headers.includes(h))) {
     throw new Error(`Invalid Excel header. Must contain: ${required.join(', ')}`);
   }
 
+  let nextGeneratedId = Date.now();
   const products = rows.map((row, i) => {
-    const id = parseInt(String(getRowValue(row, 'id')), 10);
-    const price = parseFloat(String(getRowValue(row, 'price')));
-    const stock = parseInt(String(getRowValue(row, 'stock')), 10);
+    const parsedId = parseInt(String(getRowValue(row, 'id')), 10);
+    const id = Number.isFinite(parsedId) ? parsedId : ++nextGeneratedId;
+    const price = parseImportNumber(getRowValue(row, 'price'));
+    const stock = Math.trunc(parseImportNumber(getRowValue(row, 'stock')));
     const name = String(getRowValue(row, 'name')).trim();
     const category = String(getRowValue(row, 'category')).trim();
-    if (isNaN(id) || isNaN(price) || isNaN(stock) || !name || !category) {
+    if (isNaN(price) || isNaN(stock) || !name || !category) {
       throw new Error(`Row ${i + 2}: Invalid or missing data`);
     }
 
