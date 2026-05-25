@@ -8,6 +8,31 @@ const HEADERS = {
 const STATE_KEY = 'shared-state';
 const VERSION = 1;
 
+function getAppStateStore() {
+  try {
+    return getStore('acumen-app-state');
+  } catch (error) {
+    const siteID =
+      process.env.NETLIFY_BLOBS_SITE_ID ||
+      process.env.NETLIFY_SITE_ID ||
+      process.env.SITE_ID;
+    const token =
+      process.env.NETLIFY_BLOBS_TOKEN ||
+      process.env.NETLIFY_AUTH_TOKEN ||
+      process.env.NETLIFY_API_TOKEN;
+
+    if (siteID && token) {
+      return getStore({
+        name: 'acumen-app-state',
+        siteID,
+        token,
+      });
+    }
+
+    throw error;
+  }
+}
+
 function response(statusCode, body) {
   return {
     statusCode,
@@ -33,7 +58,7 @@ export async function handler(event) {
     return { statusCode: 204, headers: HEADERS, body: '' };
   }
 
-  const store = getStore('acumen-app-state');
+  const store = getAppStateStore();
 
   if (event.httpMethod === 'GET') {
     const payload = await store.get(STATE_KEY, { type: 'json' });
