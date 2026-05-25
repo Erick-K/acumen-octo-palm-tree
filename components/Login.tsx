@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import type { User } from '../types';
 import { CompanyLogo } from './icons';
+import { loadSharedAppState } from '../lib/sharedAppState';
 
 interface LoginProps {
   onLogin: (user: User) => void;
@@ -15,13 +16,36 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
   const [users, setUsers] = useState<User[]>([]);
 
   useEffect(() => {
-    const saved = localStorage.getItem('users');
-    if (saved) {
-      setUsers(JSON.parse(saved));
-    } else {
-        // Fallback to initial mock if not in LS yet
-        import('../data/mockData').then(m => setUsers(m.MOCK_USERS));
-    }
+    let cancelled = false;
+
+    const loadUsers = async () => {
+      try {
+        const saved = localStorage.getItem('users');
+        if (saved && !cancelled) {
+          setUsers(JSON.parse(saved));
+        } else {
+          const m = await import('../data/mockData');
+          if (!cancelled) setUsers(m.MOCK_USERS);
+        }
+
+        const shared = await loadSharedAppState();
+        if (!cancelled && shared?.data?.users?.length) {
+          setUsers(shared.data.users);
+          localStorage.setItem('users', JSON.stringify(shared.data.users));
+        }
+      } catch (error) {
+        console.warn('Could not load shared users for login.', error);
+        if (!cancelled) {
+          const m = await import('../data/mockData');
+          setUsers(m.MOCK_USERS);
+        }
+      }
+    };
+
+    loadUsers();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const handleLogin = (e: React.FormEvent) => {

@@ -27,6 +27,53 @@ const StockIndicator: React.FC<{ stock: number, lowThreshold: number }> = ({ sto
     return <div className={`w-3 h-3 rounded-full ${color}`}></div>;
 };
 
+const parseCsvLine = (line: string): string[] => {
+  const values: string[] = [];
+  let current = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < line.length; i += 1) {
+    const char = line[i];
+    const nextChar = line[i + 1];
+
+    if (char === '"' && inQuotes && nextChar === '"') {
+      current += '"';
+      i += 1;
+      continue;
+    }
+
+    if (char === '"') {
+      inQuotes = !inQuotes;
+      continue;
+    }
+
+    if (char === ',' && !inQuotes) {
+      values.push(current);
+      current = '';
+      continue;
+    }
+
+    current += char;
+  }
+
+  values.push(current);
+  return values;
+};
+
+const normalizeCsvValues = (headers: string[], values: string[]): string[] => {
+  if (values.length <= headers.length) return values;
+
+  const descriptionIndex = headers.indexOf('description');
+  if (descriptionIndex === -1) return values;
+
+  const extraValueCount = values.length - headers.length;
+  return [
+    ...values.slice(0, descriptionIndex),
+    values.slice(descriptionIndex, descriptionIndex + extraValueCount + 1).join(',').trim(),
+    ...values.slice(descriptionIndex + extraValueCount + 1),
+  ];
+};
+
 export const Products: React.FC<ProductsProps> = ({ products, onUpdateProduct, onAddProduct, onImportProducts, userRole }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<'all' | string>('all');
@@ -98,6 +145,9 @@ export const Products: React.FC<ProductsProps> = ({ products, onUpdateProduct, o
         setShowAddForm(false);
         setNotification({ type: 'success', message: 'Product added successfully.' });
     }
+    setSearchTerm('');
+    setCategoryFilter('all');
+    setPriceSort('default');
   };
 
   const handleImportClick = () => {
@@ -115,6 +165,9 @@ export const Products: React.FC<ProductsProps> = ({ products, onUpdateProduct, o
       try {
         const { data } = await importProductsExcel(file);
         onImportProducts(data);
+        setSearchTerm('');
+        setCategoryFilter('all');
+        setPriceSort('default');
         setNotification({ type: 'success', message: `${data.length} products were successfully imported/updated from Excel.` });
       } catch (error) {
         setNotification({ type: 'error', message: error instanceof Error ? error.message : 'Excel import failed.' });
@@ -132,16 +185,19 @@ export const Products: React.FC<ProductsProps> = ({ products, onUpdateProduct, o
             return;
         }
         try {
-            const lines = text.trim().split('\n');
+            const lines = text
+              .replace(/^\uFEFF/, '')
+              .split(/\r?\n/)
+              .filter(line => line.trim().length > 0);
             const headerLine = lines.shift()?.trim();
             if (!headerLine) throw new Error('CSV file is empty or has no header.');
-            const headers = headerLine.split(',').map(h => h.trim().toLowerCase());
-            const expectedHeaders = ['id', 'name', 'description', 'price', 'stock', 'category'];
+            const headers = parseCsvLine(headerLine).map(h => h.trim().toLowerCase());
+            const expectedHeaders = ['id', 'name', 'price', 'stock', 'category'];
             const hasAllHeaders = expectedHeaders.every(h => headers.includes(h));
             if (!hasAllHeaders) throw new Error(`Invalid CSV header. Must contain: ${expectedHeaders.join(', ')}`);
             const importedProducts: Product[] = lines.map((line, index) => {
-                const values = line.split(',');
-                if (values.length !== headers.length) throw new Error(`Row ${index + 2}: Column count mismatch.`);
+                const values = normalizeCsvValues(headers, parseCsvLine(line));
+                if (values.length < headers.length) throw new Error(`Row ${index + 2}: Column count mismatch.`);
                 const productData: any = {};
                 headers.forEach((header, i) => { productData[header] = values[i]?.trim(); });
                 const id = parseInt(productData.id, 10);
@@ -153,6 +209,9 @@ export const Products: React.FC<ProductsProps> = ({ products, onUpdateProduct, o
                 return { id, name: productData.name, description: productData.description || '', price, stock, category: productData.category, imageUrl: productData.imageurl || undefined };
             });
             onImportProducts(importedProducts);
+            setSearchTerm('');
+            setCategoryFilter('all');
+            setPriceSort('default');
             setNotification({ type: 'success', message: `${importedProducts.length} products were successfully imported/updated from CSV.` });
         } catch (error) {
             setNotification({ type: 'error', message: error instanceof Error ? error.message : 'Import failed.' });
@@ -442,6 +501,11 @@ export const Products: React.FC<ProductsProps> = ({ products, onUpdateProduct, o
                     ))}
                 </tbody>
             </table>
+            {filteredAndSortedProducts.length === 0 && (
+                <div className="px-6 py-10 text-center text-sm text-gray-500 dark:text-gray-400">
+                    No products match the current filters. Clear the search or choose All Categories to see recently added products.
+                </div>
+            )}
         </div>
       </div>
     </div>

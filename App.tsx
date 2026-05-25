@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import type { User, Client, Product, Order, OrderItem, Task, ClockLog, UserPreferences } from './types';
 import { Page } from './types';
 import { MOCK_CLIENTS, MOCK_PRODUCTS, MOCK_ORDERS, MOCK_USERS, MOCK_TASKS } from './data/mockData';
+import { loadSharedAppState, mergeSharedAppData, saveSharedAppState, type SharedAppData } from './lib/sharedAppState';
 import { Login } from './components/Login';
 import { Sidebar } from './components/Sidebar';
 import { Dashboard } from './components/Dashboard';
@@ -31,6 +32,8 @@ const App: React.FC = () => {
   const [isSidebarOpen, setSidebarOpen] = useState(false);
   const [themePreference, setThemePreference] = useState<'light' | 'dark' | 'system'>('system');
   const [isSystemDark, setIsSystemDark] = useState<boolean>(() => window.matchMedia('(prefers-color-scheme: dark)').matches);
+  const [sharedStateReady, setSharedStateReady] = useState(false);
+  const lastSharedUpdatedAtRef = useRef<string | null>(null);
   
   // App-level state for data, with persistence
   const [users, setUsers] = useState<User[]>(() => {
@@ -95,6 +98,20 @@ const App: React.FC = () => {
     }
   });
 
+  const applySharedData = useCallback((data: SharedAppData) => {
+    setUsers(data.users);
+    setClients(data.clients);
+    setProducts(data.products);
+    setOrders(data.orders);
+    setTasks(data.tasks);
+    setClockLogs(data.clockLogs);
+    setCurrentUser(prev => {
+      if (!prev) return prev;
+      const nextUser = data.users.find(u => u.id === prev.id);
+      return nextUser ?? prev;
+    });
+  }, []);
+
   useEffect(() => {
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
     const updateSystemTheme = (event: MediaQueryListEvent) => setIsSystemDark(event.matches);
@@ -123,6 +140,83 @@ const App: React.FC = () => {
       console.error("Failed to save data to localStorage", error);
     }
   }, [users, clients, products, orders, tasks, clockLogs]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    loadSharedAppState()
+      .then(payload => {
+        if (cancelled || !payload?.data) return;
+        lastSharedUpdatedAtRef.current = payload.updatedAt;
+        const localData: SharedAppData = { users, clients, products, orders, tasks, clockLogs };
+        applySharedData(mergeSharedAppData(localData, payload.data));
+      })
+      .catch(error => {
+        console.warn('Shared app data is unavailable; using local device data.', error);
+      })
+      .finally(() => {
+        if (!cancelled) setSharedStateReady(true);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [applySharedData]);
+
+  useEffect(() => {
+    if (!sharedStateReady) return;
+
+    const data: SharedAppData = { users, clients, products, orders, tasks, clockLogs };
+    const timeout = window.setTimeout(() => {
+      saveSharedAppState(data)
+        .then(payload => {
+          if (payload?.updatedAt) {
+            lastSharedUpdatedAtRef.current = payload.updatedAt;
+          }
+        })
+        .catch(error => {
+          console.warn('Failed to save shared app data; local device data is still saved.', error);
+        });
+    }, 800);
+
+    return () => window.clearTimeout(timeout);
+  }, [sharedStateReady, users, clients, products, orders, tasks, clockLogs]);
+
+  useEffect(() => {
+    if (!sharedStateReady) return;
+
+    const interval = window.setInterval(() => {
+      loadSharedAppState()
+        .then(payload => {
+          if (!payload?.data || !payload.updatedAt) return;
+          if (payload.updatedAt === lastSharedUpdatedAtRef.current) return;
+          lastSharedUpdatedAtRef.current = payload.updatedAt;
+          applySharedData(payload.data);
+        })
+        .catch(() => {
+          // Keep the app usable offline or when the Netlify function is unavailable.
+        });
+    }, 15000);
+
+    return () => window.clearInterval(interval);
+  }, [sharedStateReady, applySharedData]);
+
+  useEffect(() => {
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key !== 'products' || !event.newValue) return;
+      try {
+        const nextProducts = JSON.parse(event.newValue);
+        if (Array.isArray(nextProducts)) {
+          setProducts(nextProducts);
+        }
+      } catch (error) {
+        console.error("Failed to sync products from localStorage", error);
+      }
+    };
+
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
+  }, []);
   
   const handleLogin = (user: User) => {
     const matchedUser = users.find(u => u.username === user.username && u.password === user.password);
@@ -322,7 +416,7 @@ const App: React.FC = () => {
         ...newProductData,
         id: products.length > 0 ? Math.max(...products.map(p => p.id)) + 1 : 1,
     };
-    setProducts(prevProducts => [...prevProducts, newProduct]);
+    setProducts(prevProducts => [newProduct, ...prevProducts]);
   };
 
   const handleUpdateProduct = (updatedProduct: Product) => {
@@ -339,7 +433,13 @@ const App: React.FC = () => {
             productsMap.set(p.id, p);
         }
       });
-      return Array.from(productsMap.values()).sort((a,b) => a.id - b.id);
+      const importedIds = new Set(importedProducts.map(p => p.id));
+      return Array.from(productsMap.values()).sort((a, b) => {
+        const aImported = importedIds.has(a.id);
+        const bImported = importedIds.has(b.id);
+        if (aImported !== bImported) return aImported ? -1 : 1;
+        return b.id - a.id;
+      });
     });
   };
 
