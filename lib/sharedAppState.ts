@@ -15,38 +15,90 @@ export interface SharedAppStatePayload {
   data: SharedAppData | null;
 }
 
-const SHARED_STATE_ENDPOINT = '/.netlify/functions/app-state';
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL?.trim() ?? '';
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY?.trim() ?? '';
+const APP_STATE_ID = 'default';
+const APP_STATE_TABLE = 'app_state';
 
-function isJsonResponse(response: Response) {
-  return response.headers.get('content-type')?.includes('application/json');
+function isSupabaseConfigured() {
+  return Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
+}
+
+function getSupabaseRestUrl(query = '') {
+  const baseUrl = SUPABASE_URL.replace(/\/$/, '');
+  return `${baseUrl}/rest/v1/${APP_STATE_TABLE}${query}`;
+}
+
+function getSupabaseHeaders(prefer?: string): HeadersInit {
+  return {
+    apikey: SUPABASE_ANON_KEY,
+    Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+    'Content-Type': 'application/json',
+    ...(prefer ? { Prefer: prefer } : {}),
+  };
 }
 
 export async function loadSharedAppState(): Promise<SharedAppStatePayload | null> {
-  const response = await fetch(SHARED_STATE_ENDPOINT, {
+  if (!isSupabaseConfigured()) {
+    return null;
+  }
+
+  const params = `?id=eq.${encodeURIComponent(APP_STATE_ID)}&select=version,updated_at,data&limit=1`;
+  const response = await fetch(getSupabaseRestUrl(params), {
     method: 'GET',
+    headers: getSupabaseHeaders(),
     cache: 'no-store',
   });
 
-  if (!response.ok || !isJsonResponse(response)) {
+  if (!response.ok) {
+    console.warn('Failed to load Supabase shared state.', await response.text());
     return null;
   }
 
-  const payload = (await response.json()) as SharedAppStatePayload;
-  return payload?.data ? payload : null;
+  const rows = (await response.json()) as Array<{ version?: number; updated_at?: string; data?: SharedAppData }>;
+  const data = rows[0];
+  if (!data?.data) return null;
+
+  return {
+    version: Number(data.version ?? 1),
+    updatedAt: typeof data.updated_at === 'string' ? data.updated_at : null,
+    data: data.data as SharedAppData,
+  };
 }
 
 export async function saveSharedAppState(data: SharedAppData): Promise<SharedAppStatePayload | null> {
-  const response = await fetch(SHARED_STATE_ENDPOINT, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
-  });
-
-  if (!response.ok || !isJsonResponse(response)) {
+  if (!isSupabaseConfigured()) {
     return null;
   }
 
-  return (await response.json()) as SharedAppStatePayload;
+  const updatedAt = new Date().toISOString();
+  const payload = {
+    id: APP_STATE_ID,
+    version: 1,
+    updated_at: updatedAt,
+    data,
+  };
+
+  const response = await fetch(getSupabaseRestUrl('?on_conflict=id&select=version,updated_at,data'), {
+    method: 'POST',
+    headers: getSupabaseHeaders('resolution=merge-duplicates,return=representation'),
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    console.warn('Failed to save Supabase shared state.', await response.text());
+    return null;
+  }
+
+  const rows = (await response.json()) as Array<{ version?: number; updated_at?: string; data?: SharedAppData }>;
+  const saved = rows[0];
+  if (!saved?.data) return null;
+
+  return {
+    version: Number(saved.version ?? 1),
+    updatedAt: typeof saved.updated_at === 'string' ? saved.updated_at : updatedAt,
+    data: saved.data as SharedAppData,
+  };
 }
 
 function mergeById<T extends { id: string | number }>(localItems: T[], sharedItems: T[]): T[] {
