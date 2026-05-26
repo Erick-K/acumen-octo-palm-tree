@@ -20,6 +20,7 @@ const KENYA_MAP_RESTRICTION: google.maps.MapRestriction = {
 
 const CLIENT_MARKER_ICON = 'https://maps.google.com/mapfiles/ms/icons/blue-dot.png';
 const YOU_MARKER_ICON = 'https://maps.google.com/mapfiles/ms/icons/green-dot.png';
+const FALLBACK_GOOGLE_MAPS_API_KEY = 'AIzaSyB-iTK1ikEqYNXdfhD07uyNRWQDM4FzaYI';
 
 // Simple projection for SVG fallback (Kenya bounds)
 const project = (lat: number, lng: number) => {
@@ -311,7 +312,7 @@ const SvgKenyaMapCanvas: React.FC<MapCanvasProps> = ({
 );
 
 export const ClientMap: React.FC<ClientMapProps> = ({ clients }) => {
-  const googleMapsApiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY?.trim() ?? '';
+  const googleMapsApiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY?.trim() || FALLBACK_GOOGLE_MAPS_API_KEY;
   const useGoogleMaps = Boolean(googleMapsApiKey);
 
   const [isEnabled, setIsEnabled] = useState(false);
