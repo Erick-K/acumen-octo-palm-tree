@@ -15,8 +15,12 @@ export interface SharedAppStatePayload {
   data: SharedAppData | null;
 }
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL?.trim() ?? '';
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY?.trim() ?? '';
+const FALLBACK_SUPABASE_URL = 'https://fnabemclwkhjdcxouzhr.supabase.co';
+const FALLBACK_SUPABASE_ANON_KEY =
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZuYWJlbWNsd2toamRjeG91emhyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3NDkyMjEsImV4cCI6MjA5NTMyNTIyMX0.4GA9tTatpI0v2OFzIs0Hc8tGqYJS5YQJcpDiLv2UM54';
+
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL?.trim() || FALLBACK_SUPABASE_URL;
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY?.trim() || FALLBACK_SUPABASE_ANON_KEY;
 const APP_STATE_ID = 'default';
 const APP_STATE_TABLE = 'app_state';
 
