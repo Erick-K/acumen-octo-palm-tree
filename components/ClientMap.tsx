@@ -1,12 +1,14 @@
 
 import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
-import type { Client } from '../types';
+import type { Client, LiveLocation, User } from '../types';
 import { useGeolocation } from '../hooks/useGeolocation';
 import { MapPinIcon, CrosshairsIcon } from './icons';
 import { GoogleMap, Marker, useJsApiLoader } from '@react-google-maps/api';
 
 interface ClientMapProps {
   clients: Client[];
+  users?: User[];
+  liveLocations?: LiveLocation[];
 }
 
 /** Approximate centre of Kenya for default map view. */
@@ -20,6 +22,7 @@ const KENYA_MAP_RESTRICTION: google.maps.MapRestriction = {
 
 const CLIENT_MARKER_ICON = 'https://maps.google.com/mapfiles/ms/icons/blue-dot.png';
 const YOU_MARKER_ICON = 'https://maps.google.com/mapfiles/ms/icons/green-dot.png';
+const SALES_REP_MARKER_ICON = 'https://maps.google.com/mapfiles/ms/icons/yellow-dot.png';
 const FALLBACK_GOOGLE_MAPS_API_KEY = 'AIzaSyB-iTK1ikEqYNXdfhD07uyNRWQDM4FzaYI';
 
 // Simple projection for SVG fallback (Kenya bounds)
@@ -71,9 +74,11 @@ const LocationPermissionModal: React.FC<{
 );
 
 type DetailedClient = Client & { details: { county: string; area: string } };
+type ActiveRepLocation = LiveLocation & { user: User; lastSeenLabel: string; title: string };
 
 interface MapCanvasProps {
   visibleClients: DetailedClient[];
+  activeRepLocations: ActiveRepLocation[];
   position: GeolocationPosition | null;
   loading: boolean;
   error: GeolocationPositionError | null;
@@ -88,6 +93,7 @@ interface MapCanvasProps {
 /** Google Maps (region KE, English) with client markers and live sales rep marker. */
 const GoogleKenyaMapCanvas: React.FC<MapCanvasProps & { apiKey: string }> = ({
   visibleClients,
+  activeRepLocations,
   position,
   loading,
   error,
@@ -125,11 +131,14 @@ const GoogleKenyaMapCanvas: React.FC<MapCanvasProps & { apiKey: string }> = ({
     visibleClients.forEach(c => {
       bounds.extend({ lat: c.location.lat, lng: c.location.lng });
     });
+    activeRepLocations.forEach(location => {
+      bounds.extend({ lat: location.lat, lng: location.lng });
+    });
     if (position) {
       bounds.extend({ lat: position.coords.latitude, lng: position.coords.longitude });
     }
 
-    if (visibleClients.length === 0 && !position) {
+    if (visibleClients.length === 0 && activeRepLocations.length === 0 && !position) {
       map.setCenter(KENYA_CENTER);
       map.setZoom(6.2);
       return;
@@ -143,7 +152,7 @@ const GoogleKenyaMapCanvas: React.FC<MapCanvasProps & { apiKey: string }> = ({
     return () => {
       google.maps.event.removeListener(listener);
     };
-  }, [isLoaded, visibleClients, position]);
+  }, [isLoaded, visibleClients, activeRepLocations, position]);
 
   if (loadError) {
     return (
@@ -193,6 +202,14 @@ const GoogleKenyaMapCanvas: React.FC<MapCanvasProps & { apiKey: string }> = ({
             icon={{ url: YOU_MARKER_ICON }}
           />
         )}
+        {activeRepLocations.map(location => (
+          <Marker
+            key={`rep-${location.userId}`}
+            position={{ lat: location.lat, lng: location.lng }}
+            title={location.title}
+            icon={{ url: SALES_REP_MARKER_ICON }}
+          />
+        ))}
       </GoogleMap>
 
       {!isEnabled && !deniedByUser && !showConfirm && (
@@ -219,7 +236,7 @@ const GoogleKenyaMapCanvas: React.FC<MapCanvasProps & { apiKey: string }> = ({
       )}
 
       <div className="absolute bottom-2 left-2 z-[1] px-2 py-0.5 text-[10px] text-gray-700 bg-white/85 dark:bg-gray-900/85 dark:text-gray-300 rounded shadow">
-        Google Maps · Kenya region · Blue: clients · Green: you
+        Google Maps · Kenya region · Blue: clients · Yellow: active sales reps · Green: you
       </div>
     </div>
   );
@@ -228,6 +245,7 @@ const GoogleKenyaMapCanvas: React.FC<MapCanvasProps & { apiKey: string }> = ({
 /** SVG fallback when no API key is configured. */
 const SvgKenyaMapCanvas: React.FC<MapCanvasProps> = ({
   visibleClients,
+  activeRepLocations,
   position,
   loading,
   error,
@@ -262,6 +280,30 @@ const SvgKenyaMapCanvas: React.FC<MapCanvasProps> = ({
             <span className="block text-[11px] text-gray-200 truncate">{client.location.address}</span>
             <span className="block text-[11px] text-gray-300 mt-0.5">
               {client.location.lat.toFixed(4)}, {client.location.lng.toFixed(4)}
+            </span>
+          </span>
+        </div>
+      );
+    })}
+
+    {activeRepLocations.map(location => {
+      const { x, y } = project(location.lat, location.lng);
+      return (
+        <div
+          key={`rep-${location.userId}`}
+          className="absolute -translate-x-1/2 -translate-y-1/2 group z-0"
+          style={{ left: `${x}%`, top: `${y}%` }}
+          title={location.title}
+        >
+          <span className="relative flex w-6 h-6">
+            <span className="absolute inline-flex w-full h-full bg-yellow-400 rounded-full opacity-75 animate-ping" />
+            <CrosshairsIcon className="relative inline-flex w-6 h-6 text-yellow-600 drop-shadow-lg" />
+          </span>
+          <span className="absolute bottom-full mb-2 w-56 px-2 py-1.5 text-xs text-white bg-gray-900 rounded-md opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none -translate-x-1/2 left-1/2 z-10 shadow-lg">
+            <span className="block font-semibold">{location.user.name}</span>
+            <span className="block text-[11px] text-gray-200">{location.lastSeenLabel}</span>
+            <span className="block text-[11px] text-gray-300 mt-0.5">
+              {location.lat.toFixed(4)}, {location.lng.toFixed(4)}
             </span>
           </span>
         </div>
@@ -311,7 +353,13 @@ const SvgKenyaMapCanvas: React.FC<MapCanvasProps> = ({
   </div>
 );
 
-export const ClientMap: React.FC<ClientMapProps> = ({ clients }) => {
+const formatLastSeen = (timestamp: string) => {
+  const parsed = new Date(timestamp);
+  if (Number.isNaN(parsed.getTime())) return 'Last update unknown';
+  return `Last update: ${parsed.toLocaleString()}`;
+};
+
+export const ClientMap: React.FC<ClientMapProps> = ({ clients, users = [], liveLocations = [] }) => {
   const googleMapsApiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY?.trim() || FALLBACK_GOOGLE_MAPS_API_KEY;
   const useGoogleMaps = Boolean(googleMapsApiKey);
 
@@ -372,8 +420,29 @@ export const ClientMap: React.FC<ClientMapProps> = ({ clients }) => {
     [detailedClients, countyFilter, normalizedSearch]
   );
 
+  const activeRepLocations = useMemo<ActiveRepLocation[]>(
+    () =>
+      liveLocations
+        .filter(location => location.isActive && Number.isFinite(location.lat) && Number.isFinite(location.lng))
+        .map(location => {
+          const user = users.find(u => u.id === location.userId);
+          if (!user || user.role !== 'Sales Representative') return null;
+          const lastSeenLabel = formatLastSeen(location.timestamp);
+          return {
+            ...location,
+            user,
+            lastSeenLabel,
+            title: `${user.name} (active sales rep) - ${lastSeenLabel}`,
+          };
+        })
+        .filter((location): location is ActiveRepLocation => Boolean(location))
+        .sort((a, b) => a.user.name.localeCompare(b.user.name)),
+    [liveLocations, users]
+  );
+
   const mapProps: MapCanvasProps = {
     visibleClients,
+    activeRepLocations,
     position,
     loading,
     error,
@@ -388,7 +457,7 @@ export const ClientMap: React.FC<ClientMapProps> = ({ clients }) => {
   return (
     <div className="p-4 bg-white border border-gray-200 rounded-lg shadow-sm dark:bg-gray-800 dark:border-gray-700">
       <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Client Locations</h3>
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Client & Sales Rep Locations</h3>
         {!useGoogleMaps && (
           <p className="text-xs text-amber-700 dark:text-amber-400 max-w-md">
             Set <code className="font-mono bg-gray-100 dark:bg-gray-700 px-1 rounded">VITE_GOOGLE_MAPS_API_KEY</code> in{' '}
@@ -455,6 +524,31 @@ export const ClientMap: React.FC<ClientMapProps> = ({ clients }) => {
           {visibleClients.length === 0 && (
             <div className="px-3 py-4 text-xs text-gray-500 dark:text-gray-400">
               No matching locations for the current filter/search.
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="mt-4 border border-gray-200 rounded-lg dark:border-gray-700 overflow-hidden">
+        <div className="px-3 py-2 bg-gray-50 dark:bg-gray-700/40 border-b border-gray-200 dark:border-gray-700">
+          <h4 className="text-sm font-semibold text-gray-800 dark:text-gray-100">Active Sales Reps</h4>
+          <p className="text-xs text-gray-500 dark:text-gray-400">Latest synced GPS location for reps who are clocked in.</p>
+        </div>
+        <div className="max-h-44 overflow-y-auto divide-y divide-gray-100 dark:divide-gray-700">
+          {activeRepLocations.map(location => (
+            <div key={location.userId} className="px-3 py-2.5 text-xs">
+              <p className="font-semibold text-gray-800 dark:text-gray-100">{location.user.name}</p>
+              <p className="text-gray-600 dark:text-gray-300">{location.user.workLocation?.town || 'Town not set'}, {location.user.workLocation?.county || 'County not set'}</p>
+              <p className="text-gray-500 dark:text-gray-400">{location.lastSeenLabel}</p>
+              <p className="text-gray-500 dark:text-gray-400">
+                Coordinates: {location.lat.toFixed(5)}, {location.lng.toFixed(5)}
+                {location.accuracy ? ` (accuracy ${Math.round(location.accuracy)}m)` : ''}
+              </p>
+            </div>
+          ))}
+          {activeRepLocations.length === 0 && (
+            <div className="px-3 py-4 text-xs text-gray-500 dark:text-gray-400">
+              No active sales rep locations yet. Reps must clock in and allow location access.
             </div>
           )}
         </div>

@@ -5,6 +5,7 @@ interface GeolocationPosition {
   coords: {
     latitude: number;
     longitude: number;
+    accuracy: number;
   };
 }
 

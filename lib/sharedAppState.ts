@@ -1,4 +1,4 @@
-import type { User, Client, Product, Order, Task, ClockLog } from '../types';
+import type { User, Client, Product, Order, Task, ClockLog, LiveLocation } from '../types';
 
 export interface SharedAppData {
   users: User[];
@@ -7,6 +7,7 @@ export interface SharedAppData {
   orders: Order[];
   tasks: Task[];
   clockLogs: ClockLog[];
+  liveLocations: LiveLocation[];
 }
 
 export interface SharedAppStatePayload {
@@ -66,7 +67,7 @@ export async function loadSharedAppState(): Promise<SharedAppStatePayload | null
   return {
     version: Number(data.version ?? 1),
     updatedAt: typeof data.updated_at === 'string' ? data.updated_at : null,
-    data: data.data as SharedAppData,
+    data: normalizeSharedAppData(data.data as Partial<SharedAppData>),
   };
 }
 
@@ -101,7 +102,7 @@ export async function saveSharedAppState(data: SharedAppData): Promise<SharedApp
   return {
     version: Number(saved.version ?? 1),
     updatedAt: typeof saved.updated_at === 'string' ? saved.updated_at : updatedAt,
-    data: saved.data as SharedAppData,
+    data: normalizeSharedAppData(saved.data as Partial<SharedAppData>),
   };
 }
 
@@ -110,6 +111,25 @@ function mergeById<T extends { id: string | number }>(localItems: T[], sharedIte
   localItems.forEach(item => merged.set(item.id, item));
   sharedItems.forEach(item => merged.set(item.id, item));
   return Array.from(merged.values());
+}
+
+function mergeByUserId(localItems: LiveLocation[], sharedItems: LiveLocation[]): LiveLocation[] {
+  const merged = new Map<number, LiveLocation>();
+  localItems.forEach(item => merged.set(item.userId, item));
+  sharedItems.forEach(item => merged.set(item.userId, item));
+  return Array.from(merged.values());
+}
+
+export function normalizeSharedAppData(data: Partial<SharedAppData>): SharedAppData {
+  return {
+    users: Array.isArray(data.users) ? data.users : [],
+    clients: Array.isArray(data.clients) ? data.clients : [],
+    products: Array.isArray(data.products) ? data.products : [],
+    orders: Array.isArray(data.orders) ? data.orders : [],
+    tasks: Array.isArray(data.tasks) ? data.tasks : [],
+    clockLogs: Array.isArray(data.clockLogs) ? data.clockLogs : [],
+    liveLocations: Array.isArray(data.liveLocations) ? data.liveLocations : [],
+  };
 }
 
 /** Shared data wins on conflicts, while local-only records are preserved for first migration. */
@@ -121,5 +141,6 @@ export function mergeSharedAppData(localData: SharedAppData, sharedData: SharedA
     orders: mergeById(localData.orders, sharedData.orders),
     tasks: mergeById(localData.tasks, sharedData.tasks),
     clockLogs: mergeById(localData.clockLogs, sharedData.clockLogs),
+    liveLocations: mergeByUserId(localData.liveLocations, sharedData.liveLocations),
   };
 }

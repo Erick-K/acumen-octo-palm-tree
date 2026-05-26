@@ -34,6 +34,15 @@ export interface ClockLog {
   timestamp: string;
 }
 
+export interface LiveLocation {
+  userId: number;
+  lat: number;
+  lng: number;
+  accuracy: number;
+  timestamp: string;
+  isActive: boolean;
+}
+
 export interface Visit {
   id: string;
   date: string;

@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import type { Client, Product, Order, Task, ClockLog } from '../types';
+import type { Client, Product, Order, Task, ClockLog, LiveLocation, User } from '../types';
 import { formatKes } from '../lib/formatCurrency';
 import { ClientMap } from './ClientMap';
 
@@ -11,6 +11,8 @@ interface DashboardProps {
   tasks: Task[];
   isClockedIn?: boolean;
   lastClockLog?: ClockLog;
+  users: User[];
+  liveLocations: LiveLocation[];
 }
 
 const StatCard: React.FC<{ title: string; value: string | number; description: string; color?: string }> = ({ title, value, description, color }) => (
@@ -42,7 +44,7 @@ const isOverdue = (dueDate: string) => new Date(dueDate) < new Date() && !isToda
 const isToday = (dueDate: string) => new Date(dueDate).toDateString() === new Date().toDateString();
 
 
-export const Dashboard: React.FC<DashboardProps> = ({ clients, products, orders, tasks, isClockedIn, lastClockLog }) => {
+export const Dashboard: React.FC<DashboardProps> = ({ clients, products, orders, tasks, isClockedIn, lastClockLog, users, liveLocations }) => {
     const totalStock = products.reduce((sum, p) => sum + p.stock, 0);
     const recentOrders = [...orders].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).slice(0, 5);
     const upcomingTasks = tasks
@@ -136,7 +138,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ clients, products, orders,
                     </div>
                 </div>
                 <div>
-                    <ClientMap clients={clients} />
+                    <ClientMap clients={clients} users={users} liveLocations={liveLocations} />
                 </div>
             </div>
         </div>

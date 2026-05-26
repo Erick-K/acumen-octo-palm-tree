@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import type { User, Client, Product, Order, OrderItem, Task, ClockLog, UserPreferences } from './types';
+import type { User, Client, Product, Order, OrderItem, Task, ClockLog, UserPreferences, LiveLocation } from './types';
 import { Page } from './types';
 import { MOCK_CLIENTS, MOCK_PRODUCTS, MOCK_ORDERS, MOCK_USERS, MOCK_TASKS } from './data/mockData';
 import { loadSharedAppState, mergeSharedAppData, saveSharedAppState, type SharedAppData } from './lib/sharedAppState';
+import { useGeolocation } from './hooks/useGeolocation';
 import { Login } from './components/Login';
 import { Sidebar } from './components/Sidebar';
 import { Dashboard } from './components/Dashboard';
@@ -34,6 +35,7 @@ const App: React.FC = () => {
   const [isSystemDark, setIsSystemDark] = useState<boolean>(() => window.matchMedia('(prefers-color-scheme: dark)').matches);
   const [sharedStateReady, setSharedStateReady] = useState(false);
   const lastSharedUpdatedAtRef = useRef<string | null>(null);
+  const lastLiveLocationSavedAtRef = useRef(0);
   
   // App-level state for data, with persistence
   const [users, setUsers] = useState<User[]>(() => {
@@ -97,6 +99,16 @@ const App: React.FC = () => {
         return [];
     }
   });
+  const [liveLocations, setLiveLocations] = useState<LiveLocation[]>(() => {
+    try {
+        const saved = localStorage.getItem('liveLocations');
+        return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+        return [];
+    }
+  });
+  const shouldTrackLiveLocation = Boolean(currentUser?.isClockedIn);
+  const { position: livePosition, error: liveLocationError } = useGeolocation(shouldTrackLiveLocation, { watch: true });
 
   const applySharedData = useCallback((data: SharedAppData) => {
     setUsers(data.users);
@@ -105,6 +117,7 @@ const App: React.FC = () => {
     setOrders(data.orders);
     setTasks(data.tasks);
     setClockLogs(data.clockLogs);
+    setLiveLocations(data.liveLocations);
     setCurrentUser(prev => {
       if (!prev) return prev;
       const nextUser = data.users.find(u => u.id === prev.id);
@@ -136,10 +149,11 @@ const App: React.FC = () => {
       localStorage.setItem('orders', JSON.stringify(orders));
       localStorage.setItem('tasks', JSON.stringify(tasks));
       localStorage.setItem('clockLogs', JSON.stringify(clockLogs));
+      localStorage.setItem('liveLocations', JSON.stringify(liveLocations));
     } catch (error) {
       console.error("Failed to save data to localStorage", error);
     }
-  }, [users, clients, products, orders, tasks, clockLogs]);
+  }, [users, clients, products, orders, tasks, clockLogs, liveLocations]);
 
   useEffect(() => {
     let cancelled = false;
@@ -148,7 +162,7 @@ const App: React.FC = () => {
       .then(payload => {
         if (cancelled || !payload?.data) return;
         lastSharedUpdatedAtRef.current = payload.updatedAt;
-        const localData: SharedAppData = { users, clients, products, orders, tasks, clockLogs };
+        const localData: SharedAppData = { users, clients, products, orders, tasks, clockLogs, liveLocations };
         applySharedData(mergeSharedAppData(localData, payload.data));
       })
       .catch(error => {
@@ -166,7 +180,7 @@ const App: React.FC = () => {
   useEffect(() => {
     if (!sharedStateReady) return;
 
-    const data: SharedAppData = { users, clients, products, orders, tasks, clockLogs };
+    const data: SharedAppData = { users, clients, products, orders, tasks, clockLogs, liveLocations };
     const timeout = window.setTimeout(() => {
       saveSharedAppState(data)
         .then(payload => {
@@ -180,7 +194,7 @@ const App: React.FC = () => {
     }, 800);
 
     return () => window.clearTimeout(timeout);
-  }, [sharedStateReady, users, clients, products, orders, tasks, clockLogs]);
+  }, [sharedStateReady, users, clients, products, orders, tasks, clockLogs, liveLocations]);
 
   useEffect(() => {
     if (!sharedStateReady) return;
@@ -200,6 +214,44 @@ const App: React.FC = () => {
 
     return () => window.clearInterval(interval);
   }, [sharedStateReady, applySharedData]);
+
+  useEffect(() => {
+    if (!currentUser?.isClockedIn || !livePosition) return;
+
+    const now = Date.now();
+    const nextLocation: LiveLocation = {
+      userId: currentUser.id,
+      lat: livePosition.coords.latitude,
+      lng: livePosition.coords.longitude,
+      accuracy: livePosition.coords.accuracy,
+      timestamp: new Date(now).toISOString(),
+      isActive: true,
+    };
+
+    setLiveLocations(prev => {
+      const existing = prev.find(location => location.userId === currentUser.id);
+      if (
+        existing &&
+        existing.lat === nextLocation.lat &&
+        existing.lng === nextLocation.lng &&
+        existing.accuracy === nextLocation.accuracy &&
+        now - lastLiveLocationSavedAtRef.current < 30000
+      ) {
+        return prev;
+      }
+
+      lastLiveLocationSavedAtRef.current = now;
+      return [
+        nextLocation,
+        ...prev.filter(location => location.userId !== currentUser.id),
+      ];
+    });
+  }, [currentUser?.id, currentUser?.isClockedIn, livePosition]);
+
+  useEffect(() => {
+    if (!liveLocationError || !currentUser?.isClockedIn) return;
+    console.warn('Live location tracking failed.', liveLocationError.message);
+  }, [currentUser?.isClockedIn, liveLocationError]);
 
   useEffect(() => {
     const handleStorage = (event: StorageEvent) => {
@@ -252,6 +304,22 @@ const App: React.FC = () => {
       const updatedUser = { ...currentUser, isClockedIn: !currentUser.isClockedIn };
       setCurrentUser(updatedUser);
       setUsers(prev => prev.map(u => u.id === currentUser.id ? updatedUser : u));
+
+      if (newType === 'out') {
+        setLiveLocations(prev => {
+          const existing = prev.find(location => location.userId === currentUser.id);
+          if (!existing) return prev;
+
+          return [
+            {
+              ...existing,
+              isActive: false,
+              timestamp: newLog.timestamp,
+            },
+            ...prev.filter(location => location.userId !== currentUser.id),
+          ];
+        });
+      }
   };
 
   const handleUpdateUserProfile = (updatedData: Partial<User>) => {
@@ -524,6 +592,8 @@ const App: React.FC = () => {
             tasks={userTasks} 
             isClockedIn={currentUser.isClockedIn}
             lastClockLog={userClockLogs[0]}
+            users={users}
+            liveLocations={currentUser.role === 'Admin' ? liveLocations : []}
         />;
       case Page.Products:
         return <Products 
@@ -576,7 +646,7 @@ const App: React.FC = () => {
       case Page.Profile:
           return <UserProfile user={currentUser} onUpdateUser={handleUpdateUserProfile} clockLogs={userClockLogs} />;
       default:
-        return <Dashboard clients={userClients} products={products} orders={userOrders} tasks={userTasks} />;
+        return <Dashboard clients={userClients} products={products} orders={userOrders} tasks={userTasks} users={users} liveLocations={currentUser.role === 'Admin' ? liveLocations : []} />;
     }
   };
 
