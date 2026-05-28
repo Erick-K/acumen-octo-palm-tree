@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import type { User, UserPreferences, UserWorkLocation, AppBranding } from '../types';
 import { Page } from '../types';
 import { PencilSquareIcon, Cog6ToothIcon, WarningIcon, CloseIcon } from './icons';
@@ -23,7 +23,8 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, currentUs
   const [editingDetailsUserId, setEditingDetailsUserId] = useState<number | null>(null);
   const [newPassword, setNewPassword] = useState('');
   const [newPin, setNewPin] = useState('');
-  const [brandingDraft, setBrandingDraft] = useState<AppBranding>(branding);
+  const appNameInputRef = useRef<HTMLInputElement | null>(null);
+  const logoUrlInputRef = useRef<HTMLInputElement | null>(null);
   const [detailsDraft, setDetailsDraft] = useState<{ name: string; username: string; avatarUrl: string }>({ name: '', username: '', avatarUrl: '' });
   const [detailsWorkLocationDraft, setDetailsWorkLocationDraft] = useState<UserWorkLocation>({ county: '', town: '' });
   const [editingPrefsUserId, setEditingPrefsUserId] = useState<number | null>(null);
@@ -177,7 +178,8 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, currentUs
   }, [editingPrefsUserId]);
 
   useEffect(() => {
-    setBrandingDraft(branding);
+    if (appNameInputRef.current) appNameInputRef.current.value = branding.appName;
+    if (logoUrlInputRef.current) logoUrlInputRef.current.value = branding.logoUrl || '';
   }, [branding]);
 
   const requestSort = (key: SortKey) => {
@@ -189,16 +191,19 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, currentUs
   };
 
   const handleSaveBranding = () => {
+    const appNameValue = appNameInputRef.current?.value?.trim() || '';
+    const logoUrlValue = logoUrlInputRef.current?.value?.trim() || undefined;
     onUpdateBranding({
-      appName: brandingDraft.appName.trim(),
-      logoUrl: brandingDraft.logoUrl?.trim() || undefined,
+      appName: appNameValue,
+      logoUrl: logoUrlValue,
     });
     alert('Branding saved.');
   };
 
   const handleResetBranding = () => {
     const resetBranding: AppBranding = { appName: DEFAULT_APP_NAME };
-    setBrandingDraft(resetBranding);
+    if (appNameInputRef.current) appNameInputRef.current.value = resetBranding.appName;
+    if (logoUrlInputRef.current) logoUrlInputRef.current.value = '';
     onUpdateBranding(resetBranding);
     alert('Branding reset to default.');
   };
@@ -227,7 +232,9 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, currentUs
         alert('Could not read the selected image. Please try a different file.');
         return;
       }
-      setBrandingDraft(prev => ({ ...prev, logoUrl: dataUrl }));
+      if (logoUrlInputRef.current) {
+        logoUrlInputRef.current.value = dataUrl;
+      }
     };
     reader.onerror = () => {
       alert('Could not import the selected image.');
@@ -329,8 +336,8 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, currentUs
             <div className="md:col-span-1">
               <label className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase mb-1 block">App Name</label>
               <input
-                value={brandingDraft.appName}
-                onChange={e => setBrandingDraft(prev => ({ ...prev, appName: e.target.value }))}
+                ref={appNameInputRef}
+                defaultValue={branding.appName}
                 placeholder="Leave blank to reset default"
                 className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:ring-yellow-500 focus:border-yellow-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
               />
@@ -338,8 +345,8 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, currentUs
             <div className="md:col-span-1">
               <label className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase mb-1 block">Logo URL</label>
               <input
-                value={brandingDraft.logoUrl || ''}
-                onChange={e => setBrandingDraft(prev => ({ ...prev, logoUrl: e.target.value }))}
+                ref={logoUrlInputRef}
+                defaultValue={branding.logoUrl || ''}
                 placeholder="Leave blank to remove custom logo"
                 className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:ring-yellow-500 focus:border-yellow-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
               />
