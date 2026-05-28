@@ -441,7 +441,6 @@ const App: React.FC = () => {
   };
 
   const persistSharedSnapshot = useCallback(async (overrides?: Partial<SharedAppData>) => {
-    if (!sharedStateReady) return;
     const snapshot: SharedAppData = {
       resetVersion,
       branding,
@@ -465,7 +464,7 @@ const App: React.FC = () => {
     } catch (error) {
       console.warn('Immediate shared save failed; will retry on autosave.', error);
     }
-  }, [sharedStateReady, resetVersion, branding, users, clients, products, orders, tasks, clockLogs, liveLocations, applySharedData]);
+  }, [resetVersion, branding, users, clients, products, orders, tasks, clockLogs, liveLocations, applySharedData]);
 
   const handleUpdateBranding = (nextBranding: AppBranding) => {
     const normalizedBranding = {

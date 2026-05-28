@@ -18,6 +18,7 @@ interface UserManagementProps {
 type SortKey = 'name' | 'username' | 'role' | 'status' | 'account';
 
 export const UserManagement: React.FC<UserManagementProps> = ({ users, currentUser, onUpdateUser, onAddUser, onDeleteUser, branding, onUpdateBranding }) => {
+  const DEFAULT_APP_NAME = 'Acme Business Suite';
   const [editingUserId, setEditingUserId] = useState<number | null>(null);
   const [editingDetailsUserId, setEditingDetailsUserId] = useState<number | null>(null);
   const [newPassword, setNewPassword] = useState('');
@@ -192,7 +193,47 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, currentUs
       appName: brandingDraft.appName.trim(),
       logoUrl: brandingDraft.logoUrl?.trim() || undefined,
     });
-    alert('Branding saved. If app name is blank it resets to default, and empty logo URL removes the custom logo.');
+    alert('Branding saved.');
+  };
+
+  const handleResetBranding = () => {
+    const resetBranding: AppBranding = { appName: DEFAULT_APP_NAME };
+    setBrandingDraft(resetBranding);
+    onUpdateBranding(resetBranding);
+    alert('Branding reset to default.');
+  };
+
+  const handleLogoFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      alert('Please choose an image file.');
+      event.target.value = '';
+      return;
+    }
+
+    const maxFileSize = 2 * 1024 * 1024;
+    if (file.size > maxFileSize) {
+      alert('Logo image is too large. Please choose an image under 2MB.');
+      event.target.value = '';
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = typeof reader.result === 'string' ? reader.result : '';
+      if (!dataUrl) {
+        alert('Could not read the selected image. Please try a different file.');
+        return;
+      }
+      setBrandingDraft(prev => ({ ...prev, logoUrl: dataUrl }));
+    };
+    reader.onerror = () => {
+      alert('Could not import the selected image.');
+    };
+    reader.readAsDataURL(file);
+    event.target.value = '';
   };
 
   const filteredAndSortedUsers = useMemo(() => {
@@ -284,7 +325,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, currentUs
 
         <div className="p-4 bg-white border border-gray-200 rounded-lg dark:bg-gray-800 dark:border-gray-700">
           <h3 className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-wider mb-3">App Branding</h3>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
             <div className="md:col-span-1">
               <label className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase mb-1 block">App Name</label>
               <input
@@ -303,6 +344,16 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, currentUs
                 className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:ring-yellow-500 focus:border-yellow-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
               />
             </div>
+            <div className="md:col-span-1">
+              <label className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase mb-1 block">Import Logo</label>
+              <input
+                type="file"
+                accept="image/*"
+                onChange={handleLogoFileChange}
+                className="w-full px-2 py-2 text-xs border border-gray-300 rounded-md bg-white focus:ring-yellow-500 focus:border-yellow-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white file:mr-2 file:rounded file:border-0 file:bg-yellow-500 file:px-2 file:py-1 file:text-[11px] file:font-bold file:text-blue-900 hover:file:bg-yellow-400"
+              />
+              <p className="mt-1 text-[11px] text-gray-500 dark:text-gray-400">Image only, max 2MB.</p>
+            </div>
             <div className="flex gap-2">
               <button
                 onClick={handleSaveBranding}
@@ -311,10 +362,10 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, currentUs
                 Save Branding
               </button>
               <button
-                onClick={() => setBrandingDraft({ appName: '', logoUrl: '' })}
+                onClick={handleResetBranding}
                 className="px-4 py-2 text-sm font-bold text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-blue-50 dark:bg-gray-700 dark:text-gray-200 dark:border-gray-600 dark:hover:bg-gray-600"
               >
-                Clear
+                Reset
               </button>
             </div>
           </div>
