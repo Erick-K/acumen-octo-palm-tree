@@ -182,12 +182,22 @@ const GoogleKenyaMapCanvas: React.FC<MapCanvasProps & { apiKey: string }> = ({
     setSearchLookupStatus('loading');
 
     const geocoder = new google.maps.Geocoder();
-    geocoder.geocode(
-      {
-        address: locationSearch.query,
-        componentRestrictions: { country: 'KE' },
-      },
-      (results, status) => {
+    const attempts: google.maps.GeocoderRequest[] = [
+      { address: locationSearch.query, componentRestrictions: { country: 'KE' } },
+      { address: locationSearch.query },
+      { address: locationSearch.label },
+    ];
+
+    const runAttempt = (index: number) => {
+      if (cancelled) return;
+      const request = attempts[index];
+      if (!request) {
+        setLocatedSearch(null);
+        setSearchLookupStatus('not-found');
+        return;
+      }
+
+      geocoder.geocode(request, (results, status) => {
         if (cancelled) return;
 
         const location = results?.[0]?.geometry.location;
@@ -209,10 +219,17 @@ const GoogleKenyaMapCanvas: React.FC<MapCanvasProps & { apiKey: string }> = ({
           return;
         }
 
+        if (status === 'ZERO_RESULTS') {
+          runAttempt(index + 1);
+          return;
+        }
+
         setLocatedSearch(null);
-        setSearchLookupStatus(status === 'ZERO_RESULTS' ? 'not-found' : 'error');
-      }
-    );
+        setSearchLookupStatus('error');
+      });
+    };
+
+    runAttempt(0);
 
     return () => {
       cancelled = true;
