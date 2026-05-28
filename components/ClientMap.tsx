@@ -529,6 +529,21 @@ export const ClientMap: React.FC<ClientMapProps> = ({ clients, users = [], liveL
     setLocationSearch({ label, query });
   };
 
+  useEffect(() => {
+    const label = typedLocation.trim();
+    if (!label) {
+      setLocationSearch(null);
+      return;
+    }
+
+    const timeout = window.setTimeout(() => {
+      const query = /\bkenya\b/i.test(label) ? label : `${label}, Kenya`;
+      setLocationSearch({ label, query });
+    }, 700);
+
+    return () => window.clearTimeout(timeout);
+  }, [typedLocation]);
+
   const detailedClients = useMemo(
     () =>
       [...clients]
@@ -631,7 +646,7 @@ export const ClientMap: React.FC<ClientMapProps> = ({ clients, users = [], liveL
             className="px-3 py-1.5 text-xs font-semibold text-blue-900 bg-yellow-500 rounded-md hover:bg-yellow-400 disabled:opacity-50"
             disabled={!typedLocation.trim()}
           >
-            Show on map
+            Show now
           </button>
         </form>
         {locationSearch && (
