@@ -188,15 +188,11 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, currentUs
   };
 
   const handleSaveBranding = () => {
-    if (!brandingDraft.appName.trim()) {
-      alert('App name is required.');
-      return;
-    }
     onUpdateBranding({
       appName: brandingDraft.appName.trim(),
       logoUrl: brandingDraft.logoUrl?.trim() || undefined,
     });
-    alert('Branding saved. All devices will sync this via shared state.');
+    alert('Branding saved. If app name is blank it resets to default, and empty logo URL removes the custom logo.');
   };
 
   const filteredAndSortedUsers = useMemo(() => {
@@ -294,7 +290,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, currentUs
               <input
                 value={brandingDraft.appName}
                 onChange={e => setBrandingDraft(prev => ({ ...prev, appName: e.target.value }))}
-                placeholder="Your company app name"
+                placeholder="Leave blank to reset default"
                 className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:ring-yellow-500 focus:border-yellow-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
               />
             </div>
@@ -303,16 +299,24 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, currentUs
               <input
                 value={brandingDraft.logoUrl || ''}
                 onChange={e => setBrandingDraft(prev => ({ ...prev, logoUrl: e.target.value }))}
-                placeholder="https://.../logo.png"
+                placeholder="Leave blank to remove custom logo"
                 className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:ring-yellow-500 focus:border-yellow-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
               />
             </div>
-            <button
-              onClick={handleSaveBranding}
-              className="px-4 py-2 text-sm font-bold text-blue-900 bg-yellow-500 rounded-md hover:bg-yellow-400"
-            >
-              Save Branding
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={handleSaveBranding}
+                className="px-4 py-2 text-sm font-bold text-blue-900 bg-yellow-500 rounded-md hover:bg-yellow-400"
+              >
+                Save Branding
+              </button>
+              <button
+                onClick={() => setBrandingDraft({ appName: '', logoUrl: '' })}
+                className="px-4 py-2 text-sm font-bold text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-blue-50 dark:bg-gray-700 dark:text-gray-200 dark:border-gray-600 dark:hover:bg-gray-600"
+              >
+                Clear
+              </button>
+            </div>
           </div>
         </div>
         
