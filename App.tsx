@@ -440,11 +440,40 @@ const App: React.FC = () => {
     }
   };
 
+  const persistSharedSnapshot = useCallback(async (overrides?: Partial<SharedAppData>) => {
+    if (!sharedStateReady) return;
+    const snapshot: SharedAppData = {
+      resetVersion,
+      branding,
+      users,
+      clients,
+      products,
+      orders,
+      tasks,
+      clockLogs,
+      liveLocations,
+      ...overrides,
+    };
+    try {
+      const payload = await saveSharedAppState(snapshot);
+      if (payload?.updatedAt) {
+        lastSharedUpdatedAtRef.current = payload.updatedAt;
+      }
+      if (payload?.data) {
+        applySharedData(payload.data);
+      }
+    } catch (error) {
+      console.warn('Immediate shared save failed; will retry on autosave.', error);
+    }
+  }, [sharedStateReady, resetVersion, branding, users, clients, products, orders, tasks, clockLogs, liveLocations, applySharedData]);
+
   const handleUpdateBranding = (nextBranding: AppBranding) => {
-    setBranding({
+    const normalizedBranding = {
       appName: nextBranding.appName.trim() || DEFAULT_APP_BRANDING.appName,
       logoUrl: nextBranding.logoUrl?.trim() || undefined,
-    });
+    };
+    setBranding(normalizedBranding);
+    persistSharedSnapshot({ branding: normalizedBranding });
   };
 
   const handleUpdateUserPassword = (userId: number, newPassword: string) => {
@@ -616,7 +645,9 @@ const App: React.FC = () => {
   };
 
   const handleDeleteProduct = (productId: number) => {
-    setProducts(prevProducts => prevProducts.filter(product => product.id !== productId));
+    const nextProducts = products.filter(product => product.id !== productId);
+    setProducts(nextProducts);
+    persistSharedSnapshot({ products: nextProducts });
   };
 
   const handleAddTask = (newTaskData: Omit<Task, 'id' | 'status'>) => {
