@@ -85,6 +85,8 @@ interface MapCanvasProps {
   visibleClients: DetailedClient[];
   activeRepLocations: ActiveRepLocation[];
   locationSearch: LocationSearchRequest | null;
+  locatedSearch: LocatedSearch | null;
+  searchLookupStatus: 'idle' | 'loading' | 'not-found' | 'error';
   position: GeolocationPosition | null;
   loading: boolean;
   error: GeolocationPositionError | null;
@@ -102,6 +104,8 @@ const GoogleKenyaMapCanvas: React.FC<MapCanvasProps & { apiKey: string }> = ({
   visibleClients,
   activeRepLocations,
   locationSearch,
+  locatedSearch,
+  searchLookupStatus,
   position,
   loading,
   error,
@@ -111,12 +115,9 @@ const GoogleKenyaMapCanvas: React.FC<MapCanvasProps & { apiKey: string }> = ({
   onRequestLocation,
   onConfirmLocation,
   onCancelLocation,
-  onManualLocationResolved,
   apiKey,
 }) => {
   const mapRef = useRef<google.maps.Map | null>(null);
-  const [locatedSearch, setLocatedSearch] = useState<LocatedSearch | null>(null);
-  const [searchLookupStatus, setSearchLookupStatus] = useState<'idle' | 'loading' | 'not-found' | 'error'>('idle');
   const { isLoaded, loadError } = useJsApiLoader({
     id: 'acumen-google-maps',
     googleMapsApiKey: apiKey,
@@ -170,96 +171,6 @@ const GoogleKenyaMapCanvas: React.FC<MapCanvasProps & { apiKey: string }> = ({
       google.maps.event.removeListener(listener);
     };
   }, [isLoaded, visibleClients, activeRepLocations, locatedSearch, position]);
-
-  useEffect(() => {
-    if (!isLoaded || !locationSearch) {
-      setLocatedSearch(null);
-      setSearchLookupStatus('idle');
-      return;
-    }
-
-    let cancelled = false;
-    setSearchLookupStatus('loading');
-
-    const geocoder = new google.maps.Geocoder();
-    const attempts: Array<google.maps.GeocoderRequest> = [
-      { address: locationSearch.query, componentRestrictions: { country: 'KE' } },
-      { address: locationSearch.query },
-      { address: locationSearch.label },
-    ];
-
-    const saveResolvedLocation = (resolvedLocation: LocatedSearch) => {
-      if (cancelled) return;
-      setLocatedSearch(resolvedLocation);
-      setSearchLookupStatus('idle');
-      onManualLocationResolved?.({
-        lat: resolvedLocation.lat,
-        lng: resolvedLocation.lng,
-        accuracy: 25,
-        address: resolvedLocation.address,
-      });
-    };
-
-    const geocodeRequest = (request: google.maps.GeocoderRequest) =>
-      new Promise<{ results: google.maps.GeocoderResult[] | null; status: google.maps.GeocoderStatus }>(resolve => {
-        geocoder.geocode(request, (results, status) => {
-          resolve({ results: results ?? null, status });
-        });
-      });
-
-    const tryOpenStreetMap = async () => {
-      try {
-        const response = await fetch(
-          `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&countrycodes=ke&q=${encodeURIComponent(locationSearch.query)}`
-        );
-        if (!response.ok) return false;
-        const rows = (await response.json()) as Array<{ lat: string; lon: string; display_name?: string }>;
-        const first = rows[0];
-        if (!first) return false;
-        const lat = Number(first.lat);
-        const lng = Number(first.lon);
-        if (!Number.isFinite(lat) || !Number.isFinite(lng)) return false;
-        saveResolvedLocation({
-          ...locationSearch,
-          lat,
-          lng,
-          address: first.display_name || locationSearch.label,
-        });
-        return true;
-      } catch {
-        return false;
-      }
-    };
-
-    const run = async () => {
-      for (const attempt of attempts) {
-        if (cancelled) return;
-        const { results, status } = await geocodeRequest(attempt);
-        const location = results?.[0]?.geometry.location;
-        if (status === 'OK' && location) {
-          saveResolvedLocation({
-            ...locationSearch,
-            lat: location.lat(),
-            lng: location.lng(),
-            address: results?.[0]?.formatted_address || locationSearch.label,
-          });
-          return;
-        }
-      }
-
-      const osmResolved = await tryOpenStreetMap();
-      if (!osmResolved && !cancelled) {
-        setLocatedSearch(null);
-        setSearchLookupStatus('not-found');
-      }
-    };
-
-    run();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [isLoaded, locationSearch, onManualLocationResolved]);
 
   if (loadError) {
     return (
@@ -369,6 +280,8 @@ const SvgKenyaMapCanvas: React.FC<MapCanvasProps> = ({
   visibleClients,
   activeRepLocations,
   locationSearch,
+  locatedSearch,
+  searchLookupStatus,
   position,
   loading,
   error,
@@ -439,9 +352,23 @@ const SvgKenyaMapCanvas: React.FC<MapCanvasProps> = ({
     {error && isEnabled && (
       <div className="absolute top-2 left-2 px-2 py-1 text-xs text-white bg-red-600/90 rounded-md">Locating Error: {error.message}</div>
     )}
-    {locationSearch && (
+    {locatedSearch && (
+      <div
+        className="absolute -translate-x-1/2 -translate-y-1/2 z-0"
+        style={{ left: `${project(locatedSearch.lat, locatedSearch.lng).x}%`, top: `${project(locatedSearch.lat, locatedSearch.lng).y}%` }}
+        title={`Selected location: ${locatedSearch.address}`}
+      >
+        <MapPinIcon className="w-6 h-6 text-red-600 drop-shadow-lg" />
+      </div>
+    )}
+    {locationSearch && !locatedSearch && (
       <div className="absolute top-10 left-2 max-w-[90%] px-2 py-1 text-xs text-white bg-gray-900/75 rounded-md">
-        Typed: {locationSearch.label}. Google Maps is needed to place the exact location marker.
+        Searching typed location: {locationSearch.label}
+      </div>
+    )}
+    {searchLookupStatus === 'not-found' && locationSearch && (
+      <div className="absolute top-16 left-2 max-w-[90%] px-2 py-1 text-xs text-white bg-red-600/90 rounded-md">
+        Could not find that location. Try adding nearby landmark or county.
       </div>
     )}
 
@@ -498,6 +425,8 @@ export const ClientMap: React.FC<ClientMapProps> = ({ clients, users = [], liveL
   const [searchTerm, setSearchTerm] = useState('');
   const [typedLocation, setTypedLocation] = useState('');
   const [locationSearch, setLocationSearch] = useState<LocationSearchRequest | null>(null);
+  const [locatedSearch, setLocatedSearch] = useState<LocatedSearch | null>(null);
+  const [searchLookupStatus, setSearchLookupStatus] = useState<'idle' | 'loading' | 'not-found' | 'error'>('idle');
 
   const { position, loading, error } = useGeolocation(isEnabled, { watch: useGoogleMaps });
 
@@ -533,6 +462,8 @@ export const ClientMap: React.FC<ClientMapProps> = ({ clients, users = [], liveL
     const label = typedLocation.trim();
     if (!label) {
       setLocationSearch(null);
+      setLocatedSearch(null);
+      setSearchLookupStatus('idle');
       return;
     }
 
@@ -543,6 +474,69 @@ export const ClientMap: React.FC<ClientMapProps> = ({ clients, users = [], liveL
 
     return () => window.clearTimeout(timeout);
   }, [typedLocation]);
+
+  useEffect(() => {
+    if (!locationSearch) {
+      setLocatedSearch(null);
+      setSearchLookupStatus('idle');
+      return;
+    }
+
+    let cancelled = false;
+    setSearchLookupStatus('loading');
+
+    const attempts = [
+      locationSearch.query,
+      locationSearch.label,
+      `${locationSearch.label}, Kenya`,
+    ];
+
+    const run = async () => {
+      for (const query of attempts) {
+        try {
+          const response = await fetch(
+            `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&countrycodes=ke&q=${encodeURIComponent(query)}`
+          );
+          if (!response.ok) continue;
+          const rows = (await response.json()) as Array<{ lat: string; lon: string; display_name?: string }>;
+          const first = rows[0];
+          if (!first) continue;
+          const lat = Number(first.lat);
+          const lng = Number(first.lon);
+          if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+          if (cancelled) return;
+
+          const resolved: LocatedSearch = {
+            ...locationSearch,
+            lat,
+            lng,
+            address: first.display_name || locationSearch.label,
+          };
+          setLocatedSearch(resolved);
+          setSearchLookupStatus('idle');
+          onManualLocationResolved?.({
+            lat,
+            lng,
+            accuracy: 25,
+            address: resolved.address,
+          });
+          return;
+        } catch {
+          // Continue trying fallback queries.
+        }
+      }
+
+      if (!cancelled) {
+        setLocatedSearch(null);
+        setSearchLookupStatus('not-found');
+      }
+    };
+
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, [locationSearch, onManualLocationResolved]);
 
   const detailedClients = useMemo(
     () =>
@@ -601,6 +595,8 @@ export const ClientMap: React.FC<ClientMapProps> = ({ clients, users = [], liveL
     visibleClients,
     activeRepLocations,
     locationSearch,
+    locatedSearch,
+    searchLookupStatus,
     position,
     loading,
     error,
