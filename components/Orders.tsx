@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo } from 'react';
 import type { Order, Client, Product, OrderItem, User } from '../types';
-import { OrderForm } from './OrderForm';
+import { OrderForm, type OrderFormData } from './OrderForm';
 import { WarningIcon, TrashIcon, PencilSquareIcon } from './icons';
 import { exportOrdersExcel, downloadExcel } from '../lib/excelApi';
 import { formatKes } from '../lib/formatCurrency';
@@ -13,7 +13,7 @@ interface OrdersProps {
   products: Product[];
   salesRepId: number;
   salesReps?: User[];
-  onPlaceOrder: (newOrder: { clientId: number; items: OrderItem[]; total: number; salesRepId: number; date: string; isPaid?: boolean }) => Order;
+  onPlaceOrder: (newOrder: OrderFormData) => Order;
   onUpdateOrder: (order: Order) => void;
   onDeleteOrder: (orderId: string) => void;
 }
@@ -88,6 +88,7 @@ const DeleteConfirmationModal: React.FC<{
 export const Orders: React.FC<OrdersProps> = ({ orders, clients, products, salesRepId, salesReps = [], onPlaceOrder, onUpdateOrder, onDeleteOrder }) => {
     const [showOrderForm, setShowOrderForm] = useState(false);
     const [editingOrder, setEditingOrder] = useState<Order | null>(null);
+    const [draftOrderData, setDraftOrderData] = useState<OrderFormData | null>(null);
     const [orderToDelete, setOrderToDelete] = useState<Order | null>(null);
     const [orderForLPO, setOrderForLPO] = useState<Order | null>(null);
     const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' }>({ key: 'date', direction: 'desc' });
@@ -164,7 +165,7 @@ export const Orders: React.FC<OrdersProps> = ({ orders, clients, products, sales
         return sortConfig.direction === 'asc' ? ' ▲' : ' ▼';
     };
     
-    const handleSaveOrder = (orderData: { clientId: number; items: OrderItem[]; total: number; salesRepId: number; date: string; isPaid?: boolean }) => {
+    const handleSaveOrder = (orderData: OrderFormData) => {
         const existingOutstanding = calculateClientOutstanding(
             orders,
             orderData.clientId,
@@ -189,12 +190,19 @@ export const Orders: React.FC<OrdersProps> = ({ orders, clients, products, sales
                 ...orderData
             });
             setEditingOrder(null);
+            setDraftOrderData(null);
         } else {
-            const created = onPlaceOrder(orderData);
-            setOrderForLPO(created);
+            setDraftOrderData(orderData);
             setShowOrderForm(false);
         }
-    }
+    };
+
+    const handlePostDraftOrder = () => {
+        if (!draftOrderData) return;
+        const created = onPlaceOrder(draftOrderData);
+        setOrderForLPO(created);
+        setDraftOrderData(null);
+    };
 
     const handleTogglePayment = (order: Order) => {
         onUpdateOrder({
@@ -249,8 +257,13 @@ export const Orders: React.FC<OrdersProps> = ({ orders, clients, products, sales
                 products={products} 
                 salesRepId={salesRepId} 
                 initialOrder={editingOrder || undefined}
+                initialDraftData={draftOrderData || undefined}
                 onSave={handleSaveOrder} 
-                onCancel={() => { setShowOrderForm(false); setEditingOrder(null); }}
+                onCancel={() => {
+                    setShowOrderForm(false);
+                    setEditingOrder(null);
+                    setDraftOrderData(null);
+                }}
             />
         </div>
     }
@@ -418,6 +431,38 @@ export const Orders: React.FC<OrdersProps> = ({ orders, clients, products, sales
             </table>
         </div>
       </div>
+
+      {draftOrderData && (
+        <div className="mt-6 p-4 border border-yellow-300 rounded-lg bg-yellow-50 dark:bg-yellow-900/20 dark:border-yellow-700">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Review New Order Before Posting</h3>
+            <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">
+                Client: <span className="font-medium">{clients.find(c => c.id === draftOrderData.clientId)?.company || 'N/A'}</span> ·
+                Items: <span className="font-medium"> {draftOrderData.items.length}</span> ·
+                Total: <span className="font-medium"> {formatKes(draftOrderData.total)}</span>
+            </p>
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Use Edit to change products/quantities/date before final posting.</p>
+            <div className="mt-3 flex items-center gap-3">
+                <button
+                    onClick={() => setShowOrderForm(true)}
+                    className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md shadow-sm hover:bg-blue-50 dark:bg-gray-700 dark:text-gray-200 dark:border-gray-600 dark:hover:bg-gray-600"
+                >
+                    Edit Order
+                </button>
+                <button
+                    onClick={handlePostDraftOrder}
+                    className="px-4 py-2 text-sm font-bold text-blue-900 bg-yellow-500 border border-transparent rounded-md shadow-sm hover:bg-yellow-400"
+                >
+                    Post Order
+                </button>
+                <button
+                    onClick={() => setDraftOrderData(null)}
+                    className="px-4 py-2 text-sm font-medium text-red-700 bg-white border border-red-300 rounded-md shadow-sm hover:bg-red-50 dark:bg-gray-700 dark:text-red-300 dark:border-red-700 dark:hover:bg-red-900/30"
+                >
+                    Discard Draft
+                </button>
+            </div>
+        </div>
+      )}
     </div>
     {orderToDelete && (
         <DeleteConfirmationModal

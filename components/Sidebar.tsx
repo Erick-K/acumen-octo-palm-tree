@@ -10,6 +10,8 @@ interface SidebarProps {
   setCurrentPage: (page: Page) => void;
   onLogout: () => void;
   isSidebarOpen: boolean;
+  appName: string;
+  logoUrl?: string;
 }
 
 const NavItem: React.FC<{
@@ -31,7 +33,7 @@ const NavItem: React.FC<{
   </button>
 );
 
-export const Sidebar: React.FC<SidebarProps> = ({ user, currentPage, setCurrentPage, onLogout, isSidebarOpen }) => {
+export const Sidebar: React.FC<SidebarProps> = ({ user, currentPage, setCurrentPage, onLogout, isSidebarOpen, appName, logoUrl }) => {
   const navItems = [
     { id: Page.Dashboard, icon: DashboardIcon, label: 'Dashboard' },
     { id: Page.Products, icon: ProductIcon, label: 'Products' },
@@ -49,8 +51,12 @@ export const Sidebar: React.FC<SidebarProps> = ({ user, currentPage, setCurrentP
     <aside className={`fixed top-0 left-0 z-40 w-64 h-screen bg-blue-900 shadow-lg transition-transform duration-300 ease-in-out ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0`}>
       <div className="flex flex-col h-full">
         <div className="flex items-center justify-center h-20 border-b border-blue-800 bg-blue-950/30">
-          <CompanyLogo className="w-10 h-10 rounded-md shadow-sm" />
-          <span className="ml-3 text-xl font-bold text-white tracking-wide">Acme Suite</span>
+          {logoUrl ? (
+            <img src={logoUrl} alt={appName} className="w-10 h-10 rounded-md object-cover shadow-sm bg-white" />
+          ) : (
+            <CompanyLogo className="w-10 h-10 rounded-md shadow-sm" />
+          )}
+          <span className="ml-3 text-xl font-bold text-white tracking-wide truncate max-w-[10.5rem]">{appName}</span>
         </div>
         <nav className="flex-1 mt-6 space-y-1">
           {navItems.map(item => (

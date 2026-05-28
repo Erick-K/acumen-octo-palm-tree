@@ -1,0 +1,68 @@
+/* Global theme baseline so dark mode applies consistently across the app. */
+:root {
+  color-scheme: light;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+html.dark,
+html[data-theme='dark'] {
+  color-scheme: dark;
+}
+
+html.dark body,
+html[data-theme='dark'] body,
+html.dark #root,
+html[data-theme='dark'] #root {
+  background-color: #0f172a;
+  color: #e5e7eb;
+}
+
+/* Fallback dark overrides for shared utility classes when a component misses explicit dark:* classes. */
+html.dark .bg-white,
+html[data-theme='dark'] .bg-white {
+  background-color: #1f2937 !important;
+}
+
+html.dark .border-gray-200,
+html.dark .border-gray-300,
+html[data-theme='dark'] .border-gray-200,
+html[data-theme='dark'] .border-gray-300 {
+  border-color: #374151 !important;
+}
+
+html.dark .text-gray-900,
+html.dark .text-gray-800,
+html.dark .text-gray-700,
+html[data-theme='dark'] .text-gray-900,
+html[data-theme='dark'] .text-gray-800,
+html[data-theme='dark'] .text-gray-700 {
+  color: #f3f4f6 !important;
+}
+
+html.dark .text-gray-600,
+html.dark .text-gray-500,
+html[data-theme='dark'] .text-gray-600,
+html[data-theme='dark'] .text-gray-500 {
+  color: #d1d5db !important;
+}
+
+html.dark input,
+html.dark select,
+html.dark textarea,
+html[data-theme='dark'] input,
+html[data-theme='dark'] select,
+html[data-theme='dark'] textarea {
+  background-color: #374151;
+  color: #f9fafb;
+  border-color: #4b5563;
+}

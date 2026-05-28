@@ -1,7 +1,8 @@
-import type { User, Client, Product, Order, Task, ClockLog, LiveLocation } from '../types';
+import type { User, Client, Product, Order, Task, ClockLog, LiveLocation, AppBranding } from '../types';
 
 export interface SharedAppData {
   resetVersion: string;
+  branding: AppBranding;
   users: User[];
   clients: Client[];
   products: Product[];
@@ -125,8 +126,19 @@ export function normalizeSharedAppData(data: Partial<SharedAppData>): SharedAppD
   const resetVersion = typeof data.resetVersion === 'string' && data.resetVersion.trim().length > 0
     ? data.resetVersion.trim()
     : 'v1';
+  const branding: AppBranding = {
+    appName:
+      typeof data.branding?.appName === 'string' && data.branding.appName.trim().length > 0
+        ? data.branding.appName.trim()
+        : 'Acme Business Suite',
+    logoUrl:
+      typeof data.branding?.logoUrl === 'string' && data.branding.logoUrl.trim().length > 0
+        ? data.branding.logoUrl.trim()
+        : undefined,
+  };
   return {
     resetVersion,
+    branding,
     users: Array.isArray(data.users) ? data.users : [],
     clients: Array.isArray(data.clients) ? data.clients : [],
     products: Array.isArray(data.products) ? data.products : [],
@@ -141,6 +153,7 @@ export function normalizeSharedAppData(data: Partial<SharedAppData>): SharedAppD
 export function mergeSharedAppData(localData: SharedAppData, sharedData: SharedAppData): SharedAppData {
   return {
     resetVersion: sharedData.resetVersion || localData.resetVersion,
+    branding: sharedData.branding || localData.branding,
     users: mergeById(localData.users, sharedData.users),
     clients: mergeById(localData.clients, sharedData.clients),
     products: mergeById(localData.products, sharedData.products),

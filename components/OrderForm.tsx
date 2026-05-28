@@ -3,22 +3,34 @@ import React, { useState, useMemo } from 'react';
 import type { Client, Product, Order, OrderItem } from '../types';
 import { formatKes } from '../lib/formatCurrency';
 
+export interface OrderFormData {
+  clientId: number;
+  items: OrderItem[];
+  total: number;
+  salesRepId: number;
+  date: string;
+  isPaid?: boolean;
+}
+
 interface OrderFormProps {
   clients: Client[];
   products: Product[];
   salesRepId: number;
   initialOrder?: Order;
-  onSave: (orderData: { clientId: number; items: OrderItem[]; total: number; salesRepId: number; date: string; isPaid?: boolean }) => void;
+  initialDraftData?: OrderFormData;
+  onSave: (orderData: OrderFormData) => void;
   onCancel: () => void;
 }
 
-export const OrderForm: React.FC<OrderFormProps> = ({ clients, products, salesRepId, initialOrder, onSave, onCancel }) => {
-  const [clientId, setClientId] = useState<number | ''>(initialOrder?.clientId ?? '');
-  const [items, setItems] = useState<OrderItem[]>(initialOrder?.items ?? []);
+export const OrderForm: React.FC<OrderFormProps> = ({ clients, products, salesRepId, initialOrder, initialDraftData, onSave, onCancel }) => {
+  const baseOrderData = initialOrder ?? initialDraftData;
+  const [clientId, setClientId] = useState<number | ''>(baseOrderData?.clientId ?? '');
+  const [items, setItems] = useState<OrderItem[]>(baseOrderData?.items ?? []);
   const [productToAdd, setProductToAdd] = useState<number | ''>('');
+  const [productSearchTerm, setProductSearchTerm] = useState('');
   const [quantity, setQuantity] = useState<number>(1);
-  const [date, setDate] = useState(initialOrder?.date || new Date().toISOString().split('T')[0]);
-  const [isPaid, setIsPaid] = useState<boolean>(initialOrder?.isPaid ?? false);
+  const [date, setDate] = useState(baseOrderData?.date || new Date().toISOString().split('T')[0]);
+  const [isPaid, setIsPaid] = useState<boolean>(baseOrderData?.isPaid ?? false);
 
   const handleAddItem = () => {
     if (!productToAdd || quantity <= 0) return;
@@ -45,6 +57,19 @@ export const OrderForm: React.FC<OrderFormProps> = ({ clients, products, salesRe
     return items.reduce((sum, item) => sum + item.priceAtSale * item.quantity, 0);
   }, [items]);
 
+  const normalizedProductSearch = productSearchTerm.trim().toLowerCase();
+  const selectableProducts = useMemo(() => {
+    return products.filter(product => {
+      if (product.stock <= 0) return false;
+      if (!normalizedProductSearch) return true;
+      return (
+        product.name.toLowerCase().includes(normalizedProductSearch) ||
+        product.category.toLowerCase().includes(normalizedProductSearch) ||
+        product.description.toLowerCase().includes(normalizedProductSearch)
+      );
+    });
+  }, [products, normalizedProductSearch]);
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!clientId || items.length === 0) {
@@ -55,7 +80,7 @@ export const OrderForm: React.FC<OrderFormProps> = ({ clients, products, salesRe
         clientId: Number(clientId), 
         items, 
         total, 
-        salesRepId: initialOrder ? initialOrder.salesRepId : salesRepId,
+        salesRepId: initialOrder?.salesRepId ?? initialDraftData?.salesRepId ?? salesRepId,
         date,
         isPaid
     });
@@ -105,12 +130,23 @@ export const OrderForm: React.FC<OrderFormProps> = ({ clients, products, salesRe
 
         <div className="p-4 border border-gray-200 rounded-lg dark:border-gray-600">
           <h3 className="mb-4 text-lg font-medium text-gray-900 dark:text-white">Add Products</h3>
+          <div className="mb-3">
+            <label htmlFor="product-search" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Search Product</label>
+            <input
+              id="product-search"
+              type="text"
+              value={productSearchTerm}
+              onChange={(e) => setProductSearchTerm(e.target.value)}
+              placeholder="Type product name, category, or description..."
+              className="block w-full px-3 py-2 mt-1 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-yellow-500 focus:border-yellow-500 sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+            />
+          </div>
           <div className="flex items-end space-x-4">
             <div className="flex-1">
               <label htmlFor="product" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Product</label>
               <select id="product" value={productToAdd} onChange={(e) => setProductToAdd(Number(e.target.value))} className="block w-full px-3 py-2 mt-1 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-yellow-500 focus:border-yellow-500 sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white">
                 <option value="" disabled>-- Select a product --</option>
-                {products.filter(p => p.stock > 0).map(p => (
+                {selectableProducts.map(p => (
                   <option key={p.id} value={p.id}>{p.name} ({formatKes(p.price)}) - {p.stock} in stock</option>
                 ))}
               </select>
@@ -121,6 +157,11 @@ export const OrderForm: React.FC<OrderFormProps> = ({ clients, products, salesRe
             </div>
             <button type="button" onClick={handleAddItem} className="px-4 py-2 font-bold text-blue-900 bg-yellow-500 border border-transparent rounded-md shadow-sm hover:bg-yellow-400 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-yellow-500">Add</button>
           </div>
+          {selectableProducts.length === 0 && (
+            <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+              No products match your search. Try another keyword.
+            </p>
+          )}
         </div>
 
         {items.length > 0 && (

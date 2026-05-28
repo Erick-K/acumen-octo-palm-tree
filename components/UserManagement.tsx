@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import type { User, UserPreferences, UserWorkLocation } from '../types';
+import type { User, UserPreferences, UserWorkLocation, AppBranding } from '../types';
 import { Page } from '../types';
 import { PencilSquareIcon, Cog6ToothIcon, WarningIcon, CloseIcon } from './icons';
 import { WorkLocationPicker } from './WorkLocationPicker';
@@ -10,14 +10,21 @@ interface UserManagementProps {
   currentUser: User;
   onUpdateUser: (userId: number, data: Partial<User>) => void;
   onAddUser: (data: Omit<User, 'id'>) => void;
+  onDeleteUser: (userId: number) => void;
+  branding: AppBranding;
+  onUpdateBranding: (branding: AppBranding) => void;
 }
 
 type SortKey = 'name' | 'username' | 'role' | 'status' | 'account';
 
-export const UserManagement: React.FC<UserManagementProps> = ({ users, currentUser, onUpdateUser, onAddUser }) => {
+export const UserManagement: React.FC<UserManagementProps> = ({ users, currentUser, onUpdateUser, onAddUser, onDeleteUser, branding, onUpdateBranding }) => {
   const [editingUserId, setEditingUserId] = useState<number | null>(null);
+  const [editingDetailsUserId, setEditingDetailsUserId] = useState<number | null>(null);
   const [newPassword, setNewPassword] = useState('');
   const [newPin, setNewPin] = useState('');
+  const [brandingDraft, setBrandingDraft] = useState<AppBranding>(branding);
+  const [detailsDraft, setDetailsDraft] = useState<{ name: string; username: string; avatarUrl: string }>({ name: '', username: '', avatarUrl: '' });
+  const [detailsWorkLocationDraft, setDetailsWorkLocationDraft] = useState<UserWorkLocation>({ county: '', town: '' });
   const [editingPrefsUserId, setEditingPrefsUserId] = useState<number | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   
@@ -46,9 +53,22 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, currentUs
 
   const handleUpdateClick = (user: User) => {
     setEditingUserId(user.id);
+    setEditingDetailsUserId(null);
     setEditingPrefsUserId(null);
     setNewPassword('');
     setNewPin(user.pinNumber || '');
+  };
+
+  const handleEditDetailsClick = (user: User) => {
+    setEditingDetailsUserId(user.id);
+    setEditingUserId(null);
+    setEditingPrefsUserId(null);
+    setDetailsDraft({
+      name: user.name,
+      username: user.username,
+      avatarUrl: user.avatarUrl || '',
+    });
+    setDetailsWorkLocationDraft(user.workLocation ?? { county: '', town: '' });
   };
 
   const handleSaveSecurity = () => {
@@ -62,6 +82,37 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, currentUs
       setNewPassword('');
       setNewPin('');
     }
+  };
+
+  const handleSaveDetails = () => {
+    if (editingDetailsUserId == null) return;
+    const trimmedName = detailsDraft.name.trim();
+    const trimmedUsername = detailsDraft.username.trim();
+    if (!trimmedName || !trimmedUsername) {
+      alert('Name and username are required.');
+      return;
+    }
+
+    const usernameTaken = users.some(
+      user =>
+        user.id !== editingDetailsUserId &&
+        user.username.trim().toLowerCase() === trimmedUsername.toLowerCase()
+    );
+    if (usernameTaken) {
+      alert('That username is already in use. Please choose a different one.');
+      return;
+    }
+
+    onUpdateUser(editingDetailsUserId, {
+      name: trimmedName,
+      username: trimmedUsername,
+      avatarUrl: detailsDraft.avatarUrl.trim() || undefined,
+      workLocation:
+        detailsWorkLocationDraft.county && detailsWorkLocationDraft.town
+          ? detailsWorkLocationDraft
+          : undefined,
+    });
+    setEditingDetailsUserId(null);
   };
 
   const handleTogglePrefs = (user: User) => {
@@ -90,6 +141,18 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, currentUs
     }
   };
 
+  const handleDeleteUser = (user: User) => {
+    if (user.id === currentUser.id) {
+      alert('You cannot delete your own account while logged in.');
+      return;
+    }
+    const confirmed = window.confirm(
+      `Delete user "${user.name}" (@${user.username})?\n\nThis will remove their account details permanently.`
+    );
+    if (!confirmed) return;
+    onDeleteUser(user.id);
+  };
+
   const handleCreateUser = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newUser.name.trim() || !newUser.username.trim() || !newUser.password.trim()) {
@@ -112,12 +175,28 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, currentUs
     setTerritoryDraft(u?.workLocation ?? { county: '', town: '' });
   }, [editingPrefsUserId]);
 
+  useEffect(() => {
+    setBrandingDraft(branding);
+  }, [branding]);
+
   const requestSort = (key: SortKey) => {
     let direction: 'asc' | 'desc' = 'asc';
     if (sortConfig.key === key && sortConfig.direction === 'asc') {
       direction = 'desc';
     }
     setSortConfig({ key, direction });
+  };
+
+  const handleSaveBranding = () => {
+    if (!brandingDraft.appName.trim()) {
+      alert('App name is required.');
+      return;
+    }
+    onUpdateBranding({
+      appName: brandingDraft.appName.trim(),
+      logoUrl: brandingDraft.logoUrl?.trim() || undefined,
+    });
+    alert('Branding saved. All devices will sync this via shared state.');
   };
 
   const filteredAndSortedUsers = useMemo(() => {
@@ -205,6 +284,36 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, currentUs
             >
                 Create User
             </button>
+        </div>
+
+        <div className="p-4 bg-white border border-gray-200 rounded-lg dark:bg-gray-800 dark:border-gray-700">
+          <h3 className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-wider mb-3">App Branding</h3>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
+            <div className="md:col-span-1">
+              <label className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase mb-1 block">App Name</label>
+              <input
+                value={brandingDraft.appName}
+                onChange={e => setBrandingDraft(prev => ({ ...prev, appName: e.target.value }))}
+                placeholder="Your company app name"
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:ring-yellow-500 focus:border-yellow-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+              />
+            </div>
+            <div className="md:col-span-1">
+              <label className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase mb-1 block">Logo URL</label>
+              <input
+                value={brandingDraft.logoUrl || ''}
+                onChange={e => setBrandingDraft(prev => ({ ...prev, logoUrl: e.target.value }))}
+                placeholder="https://.../logo.png"
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:ring-yellow-500 focus:border-yellow-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+              />
+            </div>
+            <button
+              onClick={handleSaveBranding}
+              className="px-4 py-2 text-sm font-bold text-blue-900 bg-yellow-500 rounded-md hover:bg-yellow-400"
+            >
+              Save Branding
+            </button>
+          </div>
         </div>
         
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -406,19 +515,91 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, currentUs
                                 </div>
                             </div>
                         ) : (
-                            <button 
-                            onClick={() => handleUpdateClick(user)}
-                            disabled={!isActive}
-                            className={`flex items-center group ${!isActive ? 'text-gray-400 cursor-not-allowed' : 'text-yellow-600 hover:text-yellow-700'}`}
-                            title="Update Password/PIN"
-                            >
-                            <PencilSquareIcon className={`w-4 h-4 mr-1 transition-transform ${isActive ? 'group-hover:scale-110' : ''}`} />
-                            <span className="font-bold">Security</span>
-                            </button>
+                            <div className="flex items-center space-x-3">
+                              <button
+                                onClick={() => handleEditDetailsClick(user)}
+                                className="flex items-center group text-blue-600 hover:text-blue-700"
+                                title="Edit name, username, territory and avatar"
+                              >
+                                <PencilSquareIcon className="w-4 h-4 mr-1 transition-transform group-hover:scale-110" />
+                                <span className="font-bold">Details</span>
+                              </button>
+                              <button 
+                                onClick={() => handleUpdateClick(user)}
+                                disabled={!isActive}
+                                className={`flex items-center group ${!isActive ? 'text-gray-400 cursor-not-allowed' : 'text-yellow-600 hover:text-yellow-700'}`}
+                                title="Update Password/PIN"
+                              >
+                                <PencilSquareIcon className={`w-4 h-4 mr-1 transition-transform ${isActive ? 'group-hover:scale-110' : ''}`} />
+                                <span className="font-bold">Security</span>
+                              </button>
+                              <button
+                                onClick={() => handleDeleteUser(user)}
+                                disabled={user.id === currentUser.id}
+                                className={`font-bold ${user.id === currentUser.id ? 'text-gray-400 cursor-not-allowed' : 'text-red-600 hover:text-red-700'}`}
+                                title={user.id === currentUser.id ? 'Cannot delete your own account' : 'Delete user'}
+                              >
+                                Delete
+                              </button>
+                            </div>
                         )}
                       </div>
                     </td>
                   </tr>
+                  {editingDetailsUserId === user.id && (
+                    <tr className="bg-gray-50 dark:bg-gray-900/30">
+                      <td colSpan={6} className="px-6 py-4 border-b border-gray-100 dark:border-gray-700">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Name</label>
+                            <input
+                              value={detailsDraft.name}
+                              onChange={e => setDetailsDraft(prev => ({ ...prev, name: e.target.value }))}
+                              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:ring-yellow-500 focus:border-yellow-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Username</label>
+                            <input
+                              value={detailsDraft.username}
+                              onChange={e => setDetailsDraft(prev => ({ ...prev, username: e.target.value }))}
+                              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:ring-yellow-500 focus:border-yellow-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                            />
+                          </div>
+                          <div className="md:col-span-2">
+                            <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Avatar URL (optional)</label>
+                            <input
+                              value={detailsDraft.avatarUrl}
+                              onChange={e => setDetailsDraft(prev => ({ ...prev, avatarUrl: e.target.value }))}
+                              className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:ring-yellow-500 focus:border-yellow-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                            />
+                          </div>
+                          <div className="md:col-span-2">
+                            <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Territory</label>
+                            <WorkLocationPicker
+                              idPrefix={`edit-user-wl-${user.id}`}
+                              value={detailsWorkLocationDraft}
+                              onChange={setDetailsWorkLocationDraft}
+                            />
+                          </div>
+                        </div>
+                        <div className="mt-4 flex justify-end gap-3">
+                          <button
+                            onClick={() => setEditingDetailsUserId(null)}
+                            className="px-4 py-2 text-xs font-bold text-gray-700 bg-white border border-gray-300 rounded-md dark:bg-gray-700 dark:text-gray-200 dark:border-gray-600"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            onClick={handleSaveDetails}
+                            className="px-4 py-2 text-xs font-bold text-blue-900 bg-yellow-500 rounded-md hover:bg-yellow-400"
+                          >
+                            Save Details
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
                   {showPrefs && (
                     <tr className="bg-blue-50/50 dark:bg-blue-900/10">
                         <td colSpan={6} className="px-6 py-4 border-b border-gray-100 dark:border-gray-700">

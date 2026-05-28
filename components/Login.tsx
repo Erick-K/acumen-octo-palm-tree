@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import type { User } from '../types';
+import type { User, AppBranding } from '../types';
 import { CompanyLogo } from './icons';
 import { loadSharedAppState } from '../lib/sharedAppState';
 
@@ -9,11 +9,25 @@ interface LoginProps {
 }
 
 export const Login: React.FC<LoginProps> = ({ onLogin }) => {
+  const defaultBranding: AppBranding = { appName: 'Acme Business Suite' };
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [users, setUsers] = useState<User[]>([]);
+  const [branding, setBranding] = useState<AppBranding>(() => {
+    try {
+      const savedBranding = localStorage.getItem('appBranding');
+      if (!savedBranding) return defaultBranding;
+      const parsed = JSON.parse(savedBranding) as Partial<AppBranding>;
+      return {
+        appName: parsed.appName?.trim() || defaultBranding.appName,
+        logoUrl: parsed.logoUrl?.trim() || undefined,
+      };
+    } catch {
+      return defaultBranding;
+    }
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -33,6 +47,14 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
           setUsers(shared.data.users);
           localStorage.setItem('users', JSON.stringify(shared.data.users));
         }
+        if (!cancelled && shared?.data?.branding) {
+          const sharedBranding: AppBranding = {
+            appName: shared.data.branding.appName?.trim() || defaultBranding.appName,
+            logoUrl: shared.data.branding.logoUrl?.trim() || undefined,
+          };
+          setBranding(sharedBranding);
+          localStorage.setItem('appBranding', JSON.stringify(sharedBranding));
+        }
       } catch (error) {
         console.warn('Could not load shared users for login.', error);
         if (!cancelled) {
@@ -47,6 +69,10 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    document.title = branding.appName;
+  }, [branding.appName]);
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
@@ -74,8 +100,12 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
       <div className="w-full max-w-md p-8 space-y-8 bg-white rounded-lg shadow-xl dark:bg-gray-800 border-t-4 border-yellow-500">
         <div className="text-center">
             <div className="flex flex-col justify-center items-center mb-6">
-                <CompanyLogo className="w-20 h-20 rounded-xl shadow-lg mb-2" />
-                <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Acme Business Suite</h1>
+                {branding.logoUrl ? (
+                  <img src={branding.logoUrl} alt={branding.appName} className="w-20 h-20 rounded-xl object-cover shadow-lg mb-2 bg-white" />
+                ) : (
+                  <CompanyLogo className="w-20 h-20 rounded-xl shadow-lg mb-2" />
+                )}
+                <h1 className="text-3xl font-bold text-gray-900 dark:text-white text-center">{branding.appName}</h1>
             </div>
           <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">Sign in to your account</p>
         </div>

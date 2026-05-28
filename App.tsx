@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import type { User, Client, Product, Order, OrderItem, Task, ClockLog, UserPreferences, LiveLocation } from './types';
+import type { User, Client, Product, Order, OrderItem, Task, ClockLog, UserPreferences, LiveLocation, AppBranding } from './types';
+import type { OrderFormData } from './components/OrderForm';
 import { Page } from './types';
 import { MOCK_CLIENTS, MOCK_PRODUCTS, MOCK_ORDERS, MOCK_USERS, MOCK_TASKS } from './data/mockData';
 import { loadSharedAppState, mergeSharedAppData, saveSharedAppState, type SharedAppData } from './lib/sharedAppState';
@@ -27,6 +28,8 @@ const pageTitles: { [key in Page]: string } = {
 
 type ImportedClientData = Omit<Client, 'location' | 'visits'> & { address: string };
 const LOCAL_RESET_VERSION_KEY = 'appLocalResetVersion';
+const LOCAL_BRANDING_KEY = 'appBranding';
+const DEFAULT_APP_BRANDING: AppBranding = { appName: 'Acme Business Suite' };
 
 const clearDeviceCachedAppData = () => {
   const keysToClear = ['users', 'clients', 'products', 'orders', 'tasks', 'clockLogs', 'liveLocations'];
@@ -44,6 +47,19 @@ const App: React.FC = () => {
   const lastSharedUpdatedAtRef = useRef<string | null>(null);
   const lastLiveLocationSavedAtRef = useRef(0);
   const [resetVersion, setResetVersion] = useState<string>(() => localStorage.getItem(LOCAL_RESET_VERSION_KEY) || 'v1');
+  const [branding, setBranding] = useState<AppBranding>(() => {
+    try {
+      const saved = localStorage.getItem(LOCAL_BRANDING_KEY);
+      if (!saved) return DEFAULT_APP_BRANDING;
+      const parsed = JSON.parse(saved) as Partial<AppBranding>;
+      return {
+        appName: parsed.appName?.trim() || DEFAULT_APP_BRANDING.appName,
+        logoUrl: parsed.logoUrl?.trim() || undefined,
+      };
+    } catch {
+      return DEFAULT_APP_BRANDING;
+    }
+  });
   
   // App-level state for data, with persistence
   const [users, setUsers] = useState<User[]>(() => {
@@ -120,6 +136,7 @@ const App: React.FC = () => {
 
   const applySharedData = useCallback((data: SharedAppData) => {
     setResetVersion(data.resetVersion || 'v1');
+    setBranding(data.branding || DEFAULT_APP_BRANDING);
     setUsers(data.users);
     setClients(data.clients);
     setProducts(data.products);
@@ -160,10 +177,11 @@ const App: React.FC = () => {
       localStorage.setItem('clockLogs', JSON.stringify(clockLogs));
       localStorage.setItem('liveLocations', JSON.stringify(liveLocations));
       localStorage.setItem(LOCAL_RESET_VERSION_KEY, resetVersion);
+      localStorage.setItem(LOCAL_BRANDING_KEY, JSON.stringify(branding));
     } catch (error) {
       console.error("Failed to save data to localStorage", error);
     }
-  }, [users, clients, products, orders, tasks, clockLogs, liveLocations, resetVersion]);
+  }, [users, clients, products, orders, tasks, clockLogs, liveLocations, resetVersion, branding]);
 
   useEffect(() => {
     let cancelled = false;
@@ -181,7 +199,7 @@ const App: React.FC = () => {
           return;
         }
 
-        const localData: SharedAppData = { resetVersion: localResetVersion, users, clients, products, orders, tasks, clockLogs, liveLocations };
+        const localData: SharedAppData = { resetVersion: localResetVersion, branding, users, clients, products, orders, tasks, clockLogs, liveLocations };
         applySharedData(mergeSharedAppData(localData, payload.data));
       })
       .catch(error => {
@@ -194,12 +212,12 @@ const App: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, [applySharedData, resetVersion]);
+  }, [applySharedData, resetVersion, branding]);
 
   useEffect(() => {
     if (!sharedStateReady) return;
 
-    const data: SharedAppData = { resetVersion, users, clients, products, orders, tasks, clockLogs, liveLocations };
+    const data: SharedAppData = { resetVersion, branding, users, clients, products, orders, tasks, clockLogs, liveLocations };
     const timeout = window.setTimeout(() => {
       saveSharedAppState(data)
         .then(payload => {
@@ -213,7 +231,7 @@ const App: React.FC = () => {
     }, 800);
 
     return () => window.clearTimeout(timeout);
-  }, [sharedStateReady, resetVersion, users, clients, products, orders, tasks, clockLogs, liveLocations]);
+  }, [sharedStateReady, resetVersion, branding, users, clients, products, orders, tasks, clockLogs, liveLocations]);
 
   useEffect(() => {
     if (!sharedStateReady) return;
@@ -271,6 +289,10 @@ const App: React.FC = () => {
     if (!liveLocationError || !currentUser?.isClockedIn) return;
     console.warn('Live location tracking failed.', liveLocationError.message);
   }, [currentUser?.isClockedIn, liveLocationError]);
+
+  useEffect(() => {
+    document.title = branding.appName;
+  }, [branding.appName]);
 
   const handleManualLocationResolved = useCallback((location: { lat: number; lng: number; accuracy: number; address: string }) => {
     if (!currentUser?.isClockedIn) return;
@@ -406,14 +428,40 @@ const App: React.FC = () => {
     setUsers(prev => [...prev, newUser]);
   };
 
+  const handleDeleteUser = (userId: number) => {
+    setUsers(prev => prev.filter(user => user.id !== userId));
+    setTasks(prev => prev.filter(task => task.assignedToId !== userId));
+    setClients(prev => prev.filter(client => client.salesRepId !== userId));
+    setOrders(prev => prev.filter(order => order.salesRepId !== userId));
+    setClockLogs(prev => prev.filter(log => log.userId !== userId));
+    setLiveLocations(prev => prev.filter(location => location.userId !== userId));
+    if (currentUser?.id === userId) {
+      setCurrentUser(null);
+    }
+  };
+
+  const handleUpdateBranding = (nextBranding: AppBranding) => {
+    setBranding({
+      appName: nextBranding.appName.trim() || DEFAULT_APP_BRANDING.appName,
+      logoUrl: nextBranding.logoUrl?.trim() || undefined,
+    });
+  };
+
   const handleUpdateUserPassword = (userId: number, newPassword: string) => {
       handleUpdateUser(userId, { password: newPassword });
   };
   
-  const handlePlaceOrder = (newOrderData: { clientId: number; items: OrderItem[]; total: number; salesRepId: number; date: string; isPaid?: boolean }) => {
+  const handlePlaceOrder = (newOrderData: OrderFormData) => {
+    const nextOrderNumber =
+      orders.reduce((max, order) => {
+        const match = order.id.match(/^ORD-(\d+)$/);
+        if (!match) return max;
+        return Math.max(max, Number(match[1]));
+      }, 0) + 1;
+
     const newOrder: Order = {
       ...newOrderData,
-      id: `ORD-${String(orders.length + 1).padStart(3, '0')}`,
+      id: `ORD-${nextOrderNumber}`,
       status: 'Pending',
       isPaid: newOrderData.isPaid ?? false,
     };
@@ -567,6 +615,10 @@ const App: React.FC = () => {
     setOrders(prevOrders => prevOrders.filter(o => o.id !== orderId));
   };
 
+  const handleDeleteProduct = (productId: number) => {
+    setProducts(prevProducts => prevProducts.filter(product => product.id !== productId));
+  };
+
   const handleAddTask = (newTaskData: Omit<Task, 'id' | 'status'>) => {
     const newTask: Task = {
       ...newTaskData,
@@ -642,6 +694,7 @@ const App: React.FC = () => {
             onUpdateProduct={handleUpdateProduct} 
             onAddProduct={handleAddProduct} 
             onImportProducts={handleImportProducts}
+            onDeleteProduct={handleDeleteProduct}
             userRole={currentUser.role} 
         />;
       case Page.Orders:
@@ -683,6 +736,9 @@ const App: React.FC = () => {
             currentUser={currentUser} 
             onUpdateUser={handleUpdateUser} 
             onAddUser={handleAddUser}
+            onDeleteUser={handleDeleteUser}
+            branding={branding}
+            onUpdateBranding={handleUpdateBranding}
           />;
       case Page.Profile:
           return <UserProfile user={currentUser} onUpdateUser={handleUpdateUserProfile} clockLogs={userClockLogs} />;
@@ -703,6 +759,8 @@ const App: React.FC = () => {
         setCurrentPage={setCurrentPage}
         onLogout={handleLogout}
         isSidebarOpen={isSidebarOpen}
+        appName={branding.appName}
+        logoUrl={branding.logoUrl}
       />
       <main className="flex-1 flex flex-col w-full lg:ml-64">
         <Header 

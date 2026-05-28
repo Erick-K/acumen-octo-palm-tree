@@ -5,6 +5,11 @@ export interface UserPreferences {
   defaultPage: Page;
 }
 
+export interface AppBranding {
+  appName: string;
+  logoUrl?: string;
+}
+
 /** Primary territory / base location for sales reps and admins (Kenya). */
 export interface UserWorkLocation {
   county: string;

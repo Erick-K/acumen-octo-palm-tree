@@ -12,6 +12,7 @@ interface ProductsProps {
   onUpdateProduct: (product: Product) => void;
   onAddProduct: (newProductData: Omit<Product, 'id'>) => void;
   onImportProducts: (products: Product[]) => void;
+  onDeleteProduct: (productId: number) => void;
   userRole: User['role'];
 }
 
@@ -129,13 +130,14 @@ const parseImportNumber = (value: unknown): number => {
   return Number(normalized);
 };
 
-export const Products: React.FC<ProductsProps> = ({ products, onUpdateProduct, onAddProduct, onImportProducts, userRole }) => {
+export const Products: React.FC<ProductsProps> = ({ products, onUpdateProduct, onAddProduct, onImportProducts, onDeleteProduct, userRole }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<'all' | string>('all');
   const [priceSort, setPriceSort] = useState<'default' | 'asc' | 'desc'>('default');
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [showAddForm, setShowAddForm] = useState(false);
   const [notification, setNotification] = useState<{type: 'success' | 'error', message: string} | null>(null);
+  const [productToDelete, setProductToDelete] = useState<Product | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   // State for image modal
@@ -317,6 +319,13 @@ export const Products: React.FC<ProductsProps> = ({ products, onUpdateProduct, o
   };
 
   const handleExport = () => exportFormat === 'excel' ? handleExportExcel() : handleExportCSV();
+
+  const handleConfirmDelete = () => {
+    if (!productToDelete) return;
+    onDeleteProduct(productToDelete.id);
+    setNotification({ type: 'success', message: `${productToDelete.name} was deleted.` });
+    setProductToDelete(null);
+  };
 
 
   if (showAddForm || editingProduct) {
@@ -550,6 +559,14 @@ export const Products: React.FC<ProductsProps> = ({ products, onUpdateProduct, o
                                 >
                                     Edit
                                 </button>
+                                {userRole === 'Admin' && (
+                                  <button
+                                    onClick={() => setProductToDelete(product)}
+                                    className="ml-4 text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300"
+                                  >
+                                    Delete
+                                  </button>
+                                )}
                             </td>
                         </tr>
                     ))}
@@ -562,6 +579,39 @@ export const Products: React.FC<ProductsProps> = ({ products, onUpdateProduct, o
             )}
         </div>
       </div>
+      {productToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50" aria-modal="true" role="dialog">
+          <div className="w-full max-w-md p-6 bg-white rounded-lg shadow-xl dark:bg-gray-800">
+            <div className="flex">
+              <div className="flex-shrink-0 flex items-center justify-center w-12 h-12 mx-auto bg-red-100 rounded-full sm:mx-0 sm:h-10 sm:w-10 dark:bg-red-900/30">
+                <WarningIcon className="w-6 h-6 text-red-600 dark:text-red-400" />
+              </div>
+              <div className="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left">
+                <h3 className="text-lg font-medium leading-6 text-gray-900 dark:text-white">Delete Product</h3>
+                <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+                  Delete <span className="font-semibold">{productToDelete.name}</span>? This cannot be undone.
+                </p>
+              </div>
+            </div>
+            <div className="mt-5 sm:mt-4 sm:flex sm:flex-row-reverse">
+              <button
+                type="button"
+                onClick={handleConfirmDelete}
+                className="inline-flex justify-center w-full px-4 py-2 text-base font-medium text-white bg-red-600 border border-transparent rounded-md shadow-sm hover:bg-red-700 sm:ml-3 sm:w-auto sm:text-sm"
+              >
+                Confirm Delete
+              </button>
+              <button
+                type="button"
+                onClick={() => setProductToDelete(null)}
+                className="inline-flex justify-center w-full px-4 py-2 mt-3 text-base font-medium text-gray-700 bg-white border border-gray-300 rounded-md shadow-sm hover:bg-blue-50 sm:mt-0 sm:w-auto sm:text-sm dark:bg-gray-600 dark:text-gray-200 dark:border-gray-500 dark:hover:bg-gray-500"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
