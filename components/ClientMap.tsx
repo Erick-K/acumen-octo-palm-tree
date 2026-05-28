@@ -182,54 +182,79 @@ const GoogleKenyaMapCanvas: React.FC<MapCanvasProps & { apiKey: string }> = ({
     setSearchLookupStatus('loading');
 
     const geocoder = new google.maps.Geocoder();
-    const attempts: google.maps.GeocoderRequest[] = [
+    const attempts: Array<google.maps.GeocoderRequest> = [
       { address: locationSearch.query, componentRestrictions: { country: 'KE' } },
       { address: locationSearch.query },
       { address: locationSearch.label },
     ];
 
-    const runAttempt = (index: number) => {
+    const saveResolvedLocation = (resolvedLocation: LocatedSearch) => {
       if (cancelled) return;
-      const request = attempts[index];
-      if (!request) {
-        setLocatedSearch(null);
-        setSearchLookupStatus('not-found');
-        return;
+      setLocatedSearch(resolvedLocation);
+      setSearchLookupStatus('idle');
+      onManualLocationResolved?.({
+        lat: resolvedLocation.lat,
+        lng: resolvedLocation.lng,
+        accuracy: 25,
+        address: resolvedLocation.address,
+      });
+    };
+
+    const geocodeRequest = (request: google.maps.GeocoderRequest) =>
+      new Promise<{ results: google.maps.GeocoderResult[] | null; status: google.maps.GeocoderStatus }>(resolve => {
+        geocoder.geocode(request, (results, status) => {
+          resolve({ results: results ?? null, status });
+        });
+      });
+
+    const tryOpenStreetMap = async () => {
+      try {
+        const response = await fetch(
+          `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&countrycodes=ke&q=${encodeURIComponent(locationSearch.query)}`
+        );
+        if (!response.ok) return false;
+        const rows = (await response.json()) as Array<{ lat: string; lon: string; display_name?: string }>;
+        const first = rows[0];
+        if (!first) return false;
+        const lat = Number(first.lat);
+        const lng = Number(first.lon);
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) return false;
+        saveResolvedLocation({
+          ...locationSearch,
+          lat,
+          lng,
+          address: first.display_name || locationSearch.label,
+        });
+        return true;
+      } catch {
+        return false;
       }
+    };
 
-      geocoder.geocode(request, (results, status) => {
+    const run = async () => {
+      for (const attempt of attempts) {
         if (cancelled) return;
-
+        const { results, status } = await geocodeRequest(attempt);
         const location = results?.[0]?.geometry.location;
         if (status === 'OK' && location) {
-          const resolvedLocation = {
+          saveResolvedLocation({
             ...locationSearch,
             lat: location.lat(),
             lng: location.lng(),
             address: results?.[0]?.formatted_address || locationSearch.label,
-          };
-          setLocatedSearch(resolvedLocation);
-          setSearchLookupStatus('idle');
-          onManualLocationResolved?.({
-            lat: resolvedLocation.lat,
-            lng: resolvedLocation.lng,
-            accuracy: 25,
-            address: resolvedLocation.address,
           });
           return;
         }
+      }
 
-        if (status === 'ZERO_RESULTS') {
-          runAttempt(index + 1);
-          return;
-        }
-
+      const osmResolved = await tryOpenStreetMap();
+      if (!osmResolved && !cancelled) {
         setLocatedSearch(null);
-        setSearchLookupStatus('error');
-      });
+        setSearchLookupStatus('not-found');
+      }
     };
 
-    runAttempt(0);
+    run();
 
     return () => {
       cancelled = true;
