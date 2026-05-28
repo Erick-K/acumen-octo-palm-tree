@@ -126,10 +126,11 @@ export function normalizeSharedAppData(data: Partial<SharedAppData>): SharedAppD
   const resetVersion = typeof data.resetVersion === 'string' && data.resetVersion.trim().length > 0
     ? data.resetVersion.trim()
     : 'v1';
+  const hasBrandingAppName = typeof data.branding?.appName === 'string';
   const branding: AppBranding = {
     appName:
-      typeof data.branding?.appName === 'string' && data.branding.appName.trim().length > 0
-        ? data.branding.appName.trim()
+      hasBrandingAppName
+        ? data.branding!.appName.trim()
         : 'Acme Business Suite',
     logoUrl:
       typeof data.branding?.logoUrl === 'string' && data.branding.logoUrl.trim().length > 0
@@ -149,11 +150,16 @@ export function normalizeSharedAppData(data: Partial<SharedAppData>): SharedAppD
   };
 }
 
+const isDefaultBranding = (branding: AppBranding) =>
+  branding.appName.trim() === 'Acme Business Suite' && !branding.logoUrl;
+
 /** Shared data wins on conflicts, while local-only records are preserved for first migration. */
 export function mergeSharedAppData(localData: SharedAppData, sharedData: SharedAppData): SharedAppData {
+  const useLocalBranding =
+    !isDefaultBranding(localData.branding) && isDefaultBranding(sharedData.branding);
   return {
     resetVersion: sharedData.resetVersion || localData.resetVersion,
-    branding: sharedData.branding || localData.branding,
+    branding: useLocalBranding ? localData.branding : sharedData.branding || localData.branding,
     users: mergeById(localData.users, sharedData.users),
     clients: mergeById(localData.clients, sharedData.clients),
     products: mergeById(localData.products, sharedData.products),

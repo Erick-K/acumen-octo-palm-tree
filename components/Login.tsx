@@ -10,6 +10,8 @@ interface LoginProps {
 
 export const Login: React.FC<LoginProps> = ({ onLogin }) => {
   const defaultBranding: AppBranding = { appName: 'Acme Business Suite' };
+  const isDefaultBranding = (value: AppBranding) =>
+    value.appName.trim() === defaultBranding.appName && !value.logoUrl;
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -21,7 +23,8 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
       if (!savedBranding) return defaultBranding;
       const parsed = JSON.parse(savedBranding) as Partial<AppBranding>;
       return {
-        appName: parsed.appName?.trim() || defaultBranding.appName,
+        appName:
+          typeof parsed.appName === 'string' ? parsed.appName.trim() : defaultBranding.appName,
         logoUrl: parsed.logoUrl?.trim() || undefined,
       };
     } catch {
@@ -49,11 +52,17 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
         }
         if (!cancelled && shared?.data?.branding) {
           const sharedBranding: AppBranding = {
-            appName: shared.data.branding.appName?.trim() || defaultBranding.appName,
+            appName:
+              typeof shared.data.branding.appName === 'string'
+                ? shared.data.branding.appName.trim()
+                : defaultBranding.appName,
             logoUrl: shared.data.branding.logoUrl?.trim() || undefined,
           };
-          setBranding(sharedBranding);
-          localStorage.setItem('appBranding', JSON.stringify(sharedBranding));
+          setBranding(prev => {
+            if (!isDefaultBranding(prev)) return prev;
+            localStorage.setItem('appBranding', JSON.stringify(sharedBranding));
+            return sharedBranding;
+          });
         }
       } catch (error) {
         console.warn('Could not load shared users for login.', error);

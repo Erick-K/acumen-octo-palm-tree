@@ -31,6 +31,12 @@ const LOCAL_RESET_VERSION_KEY = 'appLocalResetVersion';
 const LOCAL_BRANDING_KEY = 'appBranding';
 const DEFAULT_APP_BRANDING: AppBranding = { appName: 'Acme Business Suite' };
 
+const isIsoTimestampNewer = (incoming: string | null, current: string | null) => {
+  if (!incoming) return false;
+  if (!current) return true;
+  return incoming > current;
+};
+
 const clearDeviceCachedAppData = () => {
   const keysToClear = ['users', 'clients', 'products', 'orders', 'tasks', 'clockLogs', 'liveLocations'];
   keysToClear.forEach(key => localStorage.removeItem(key));
@@ -53,7 +59,10 @@ const App: React.FC = () => {
       if (!saved) return DEFAULT_APP_BRANDING;
       const parsed = JSON.parse(saved) as Partial<AppBranding>;
       return {
-        appName: parsed.appName?.trim() || DEFAULT_APP_BRANDING.appName,
+        appName:
+          typeof parsed.appName === 'string'
+            ? parsed.appName.trim()
+            : DEFAULT_APP_BRANDING.appName,
         logoUrl: parsed.logoUrl?.trim() || undefined,
       };
     } catch {
@@ -189,7 +198,9 @@ const App: React.FC = () => {
     loadSharedAppState()
       .then(payload => {
         if (cancelled || !payload?.data) return;
-        lastSharedUpdatedAtRef.current = payload.updatedAt;
+        if (isIsoTimestampNewer(payload.updatedAt, lastSharedUpdatedAtRef.current)) {
+          lastSharedUpdatedAtRef.current = payload.updatedAt;
+        }
         const sharedResetVersion = payload.data.resetVersion || 'v1';
         const localResetVersion = localStorage.getItem(LOCAL_RESET_VERSION_KEY) || resetVersion;
         if (sharedResetVersion !== localResetVersion) {
@@ -240,7 +251,7 @@ const App: React.FC = () => {
       loadSharedAppState()
         .then(payload => {
           if (!payload?.data || !payload.updatedAt) return;
-          if (payload.updatedAt === lastSharedUpdatedAtRef.current) return;
+          if (!isIsoTimestampNewer(payload.updatedAt, lastSharedUpdatedAtRef.current)) return;
           lastSharedUpdatedAtRef.current = payload.updatedAt;
           applySharedData(payload.data);
         })
@@ -408,7 +419,8 @@ const App: React.FC = () => {
   };
 
   const handleUpdateUser = (userId: number, updatedData: Partial<User>) => {
-    setUsers(prev => prev.map(u => u.id === userId ? { ...u, ...updatedData } : u));
+    const nextUsers = users.map(u => (u.id === userId ? { ...u, ...updatedData } : u));
+    setUsers(nextUsers);
     
     if (currentUser && currentUser.id === userId) {
         setCurrentUser(prev => prev ? { ...prev, ...updatedData } : null);
@@ -416,6 +428,8 @@ const App: React.FC = () => {
             handleLogout();
         }
     }
+    lastSharedUpdatedAtRef.current = new Date().toISOString();
+    persistSharedSnapshot({ users: nextUsers });
   };
 
   const handleAddUser = (newUserData: Omit<User, 'id'>) => {
@@ -468,9 +482,10 @@ const App: React.FC = () => {
 
   const handleUpdateBranding = (nextBranding: AppBranding) => {
     const normalizedBranding = {
-      appName: nextBranding.appName.trim() || DEFAULT_APP_BRANDING.appName,
+      appName: nextBranding.appName.trim(),
       logoUrl: nextBranding.logoUrl?.trim() || undefined,
     };
+    lastSharedUpdatedAtRef.current = new Date().toISOString();
     setBranding(normalizedBranding);
     persistSharedSnapshot({ branding: normalizedBranding });
   };
