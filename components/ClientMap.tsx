@@ -1,7 +1,6 @@
 
 import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import type { Client, LiveLocation, User } from '../types';
-import { KENYAN_COUNTIES_AND_TOWNS, getTownsForCounty } from '../data/kenyanLocations';
 import { useGeolocation } from '../hooks/useGeolocation';
 import { MapPinIcon, CrosshairsIcon } from './icons';
 import { GoogleMap, Marker, useJsApiLoader } from '@react-google-maps/api';
@@ -10,6 +9,8 @@ interface ClientMapProps {
   clients: Client[];
   users?: User[];
   liveLocations?: LiveLocation[];
+  currentUser?: User;
+  onManualLocationResolved?: (location: { lat: number; lng: number; accuracy: number; address: string }) => void;
 }
 
 /** Approximate centre of Kenya for default map view. */
@@ -24,7 +25,7 @@ const KENYA_MAP_RESTRICTION: google.maps.MapRestriction = {
 const CLIENT_MARKER_ICON = 'https://maps.google.com/mapfiles/ms/icons/blue-dot.png';
 const YOU_MARKER_ICON = 'https://maps.google.com/mapfiles/ms/icons/green-dot.png';
 const SALES_REP_MARKER_ICON = 'https://maps.google.com/mapfiles/ms/icons/yellow-dot.png';
-const SELECTED_TOWN_MARKER_ICON = 'https://maps.google.com/mapfiles/ms/icons/red-dot.png';
+const SEARCH_LOCATION_MARKER_ICON = 'https://maps.google.com/mapfiles/ms/icons/red-dot.png';
 const FALLBACK_GOOGLE_MAPS_API_KEY = 'AIzaSyB-iTK1ikEqYNXdfhD07uyNRWQDM4FzaYI';
 
 // Simple projection for SVG fallback (Kenya bounds)
@@ -77,13 +78,13 @@ const LocationPermissionModal: React.FC<{
 
 type DetailedClient = Client & { details: { county: string; area: string } };
 type ActiveRepLocation = LiveLocation & { user: User; lastSeenLabel: string; title: string };
-type SelectedTown = { county: string; town: string; query: string };
-type LocatedTown = SelectedTown & { lat: number; lng: number };
+type LocationSearchRequest = { label: string; query: string };
+type LocatedSearch = LocationSearchRequest & { lat: number; lng: number; address: string };
 
 interface MapCanvasProps {
   visibleClients: DetailedClient[];
   activeRepLocations: ActiveRepLocation[];
-  selectedTown: SelectedTown | null;
+  locationSearch: LocationSearchRequest | null;
   position: GeolocationPosition | null;
   loading: boolean;
   error: GeolocationPositionError | null;
@@ -93,13 +94,14 @@ interface MapCanvasProps {
   onRequestLocation: () => void;
   onConfirmLocation: () => void;
   onCancelLocation: () => void;
+  onManualLocationResolved?: (location: { lat: number; lng: number; accuracy: number; address: string }) => void;
 }
 
 /** Google Maps (region KE, English) with client markers and live sales rep marker. */
 const GoogleKenyaMapCanvas: React.FC<MapCanvasProps & { apiKey: string }> = ({
   visibleClients,
   activeRepLocations,
-  selectedTown,
+  locationSearch,
   position,
   loading,
   error,
@@ -109,11 +111,12 @@ const GoogleKenyaMapCanvas: React.FC<MapCanvasProps & { apiKey: string }> = ({
   onRequestLocation,
   onConfirmLocation,
   onCancelLocation,
+  onManualLocationResolved,
   apiKey,
 }) => {
   const mapRef = useRef<google.maps.Map | null>(null);
-  const [locatedTown, setLocatedTown] = useState<LocatedTown | null>(null);
-  const [townLookupStatus, setTownLookupStatus] = useState<'idle' | 'loading' | 'not-found' | 'error'>('idle');
+  const [locatedSearch, setLocatedSearch] = useState<LocatedSearch | null>(null);
+  const [searchLookupStatus, setSearchLookupStatus] = useState<'idle' | 'loading' | 'not-found' | 'error'>('idle');
   const { isLoaded, loadError } = useJsApiLoader({
     id: 'acumen-google-maps',
     googleMapsApiKey: apiKey,
@@ -135,8 +138,8 @@ const GoogleKenyaMapCanvas: React.FC<MapCanvasProps & { apiKey: string }> = ({
     const map = mapRef.current;
     if (!map || !isLoaded) return;
 
-    if (locatedTown) {
-      map.setCenter({ lat: locatedTown.lat, lng: locatedTown.lng });
+    if (locatedSearch) {
+      map.setCenter({ lat: locatedSearch.lat, lng: locatedSearch.lng });
       map.setZoom(13);
       return;
     }
@@ -166,22 +169,22 @@ const GoogleKenyaMapCanvas: React.FC<MapCanvasProps & { apiKey: string }> = ({
     return () => {
       google.maps.event.removeListener(listener);
     };
-  }, [isLoaded, visibleClients, activeRepLocations, locatedTown, position]);
+  }, [isLoaded, visibleClients, activeRepLocations, locatedSearch, position]);
 
   useEffect(() => {
-    if (!isLoaded || !selectedTown) {
-      setLocatedTown(null);
-      setTownLookupStatus('idle');
+    if (!isLoaded || !locationSearch) {
+      setLocatedSearch(null);
+      setSearchLookupStatus('idle');
       return;
     }
 
     let cancelled = false;
-    setTownLookupStatus('loading');
+    setSearchLookupStatus('loading');
 
     const geocoder = new google.maps.Geocoder();
     geocoder.geocode(
       {
-        address: selectedTown.query,
+        address: locationSearch.query,
         componentRestrictions: { country: 'KE' },
       },
       (results, status) => {
@@ -189,24 +192,32 @@ const GoogleKenyaMapCanvas: React.FC<MapCanvasProps & { apiKey: string }> = ({
 
         const location = results?.[0]?.geometry.location;
         if (status === 'OK' && location) {
-          setLocatedTown({
-            ...selectedTown,
+          const resolvedLocation = {
+            ...locationSearch,
             lat: location.lat(),
             lng: location.lng(),
+            address: results?.[0]?.formatted_address || locationSearch.label,
+          };
+          setLocatedSearch(resolvedLocation);
+          setSearchLookupStatus('idle');
+          onManualLocationResolved?.({
+            lat: resolvedLocation.lat,
+            lng: resolvedLocation.lng,
+            accuracy: 25,
+            address: resolvedLocation.address,
           });
-          setTownLookupStatus('idle');
           return;
         }
 
-        setLocatedTown(null);
-        setTownLookupStatus(status === 'ZERO_RESULTS' ? 'not-found' : 'error');
+        setLocatedSearch(null);
+        setSearchLookupStatus(status === 'ZERO_RESULTS' ? 'not-found' : 'error');
       }
     );
 
     return () => {
       cancelled = true;
     };
-  }, [isLoaded, selectedTown]);
+  }, [isLoaded, locationSearch, onManualLocationResolved]);
 
   if (loadError) {
     return (
@@ -264,11 +275,11 @@ const GoogleKenyaMapCanvas: React.FC<MapCanvasProps & { apiKey: string }> = ({
             icon={{ url: SALES_REP_MARKER_ICON }}
           />
         ))}
-        {locatedTown && (
+        {locatedSearch && (
           <Marker
-            position={{ lat: locatedTown.lat, lng: locatedTown.lng }}
-            title={`Selected location: ${locatedTown.town}, ${locatedTown.county} County`}
-            icon={{ url: SELECTED_TOWN_MARKER_ICON }}
+            position={{ lat: locatedSearch.lat, lng: locatedSearch.lng }}
+            title={`Selected location: ${locatedSearch.address}`}
+            icon={{ url: SEARCH_LOCATION_MARKER_ICON }}
           />
         )}
       </GoogleMap>
@@ -295,17 +306,17 @@ const GoogleKenyaMapCanvas: React.FC<MapCanvasProps & { apiKey: string }> = ({
           Location: {error.message}
         </div>
       )}
-      {townLookupStatus === 'loading' && (
-        <div className="absolute top-11 left-3 z-[1] px-2 py-1 text-xs text-white bg-gray-900/75 backdrop-blur rounded-md">Finding selected town…</div>
+      {searchLookupStatus === 'loading' && (
+        <div className="absolute top-11 left-3 z-[1] px-2 py-1 text-xs text-white bg-gray-900/75 backdrop-blur rounded-md">Finding typed location…</div>
       )}
-      {(townLookupStatus === 'not-found' || townLookupStatus === 'error') && selectedTown && (
+      {(searchLookupStatus === 'not-found' || searchLookupStatus === 'error') && locationSearch && (
         <div className="absolute top-11 left-3 z-[1] max-w-[90%] px-2 py-1 text-xs text-white bg-red-600/90 rounded-md">
-          Could not place {selectedTown.town}. Try another nearby town.
+          Could not find that location. Try adding the town, county, or a nearby landmark.
         </div>
       )}
 
       <div className="absolute bottom-2 left-2 z-[1] px-2 py-0.5 text-[10px] text-gray-700 bg-white/85 dark:bg-gray-900/85 dark:text-gray-300 rounded shadow">
-        Google Maps · Kenya region · Blue: clients · Yellow: active sales reps · Green: you · Red: selected town
+        Google Maps · Kenya region · Blue: clients · Yellow: active sales reps · Green: you · Red: typed location
       </div>
     </div>
   );
@@ -315,7 +326,7 @@ const GoogleKenyaMapCanvas: React.FC<MapCanvasProps & { apiKey: string }> = ({
 const SvgKenyaMapCanvas: React.FC<MapCanvasProps> = ({
   visibleClients,
   activeRepLocations,
-  selectedTown,
+  locationSearch,
   position,
   loading,
   error,
@@ -386,9 +397,9 @@ const SvgKenyaMapCanvas: React.FC<MapCanvasProps> = ({
     {error && isEnabled && (
       <div className="absolute top-2 left-2 px-2 py-1 text-xs text-white bg-red-600/90 rounded-md">Locating Error: {error.message}</div>
     )}
-    {selectedTown && (
+    {locationSearch && (
       <div className="absolute top-10 left-2 max-w-[90%] px-2 py-1 text-xs text-white bg-gray-900/75 rounded-md">
-        Selected: {selectedTown.town}, {selectedTown.county}. Google Maps is needed to place the exact town marker.
+        Typed: {locationSearch.label}. Google Maps is needed to place the exact location marker.
       </div>
     )}
 
@@ -434,7 +445,7 @@ const formatLastSeen = (timestamp: string) => {
   return `Last update: ${parsed.toLocaleString()}`;
 };
 
-export const ClientMap: React.FC<ClientMapProps> = ({ clients, users = [], liveLocations = [] }) => {
+export const ClientMap: React.FC<ClientMapProps> = ({ clients, users = [], liveLocations = [], currentUser, onManualLocationResolved }) => {
   const googleMapsApiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY?.trim() || FALLBACK_GOOGLE_MAPS_API_KEY;
   const useGoogleMaps = Boolean(googleMapsApiKey);
 
@@ -443,8 +454,8 @@ export const ClientMap: React.FC<ClientMapProps> = ({ clients, users = [], liveL
   const [deniedByUser, setDeniedByUser] = useState(false);
   const [countyFilter, setCountyFilter] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedCounty, setSelectedCounty] = useState('');
-  const [selectedTownName, setSelectedTownName] = useState('');
+  const [typedLocation, setTypedLocation] = useState('');
+  const [locationSearch, setLocationSearch] = useState<LocationSearchRequest | null>(null);
 
   const { position, loading, error } = useGeolocation(isEnabled, { watch: useGoogleMaps });
 
@@ -464,12 +475,16 @@ export const ClientMap: React.FC<ClientMapProps> = ({ clients, users = [], liveL
     setIsEnabled(false);
   };
 
-  const selectedCountyTowns = useMemo(() => getTownsForCounty(selectedCounty), [selectedCounty]);
+  const handleTypedLocationSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const label = typedLocation.trim();
+    if (!label) {
+      setLocationSearch(null);
+      return;
+    }
 
-  const handleSelectedCountyChange = (county: string) => {
-    setSelectedCounty(county);
-    const towns = getTownsForCounty(county);
-    setSelectedTownName(towns[0] ?? '');
+    const query = /\bkenya\b/i.test(label) ? label : `${label}, Kenya`;
+    setLocationSearch({ label, query });
   };
 
   const detailedClients = useMemo(
@@ -525,19 +540,10 @@ export const ClientMap: React.FC<ClientMapProps> = ({ clients, users = [], liveL
     [liveLocations, users]
   );
 
-  const selectedTown = useMemo<SelectedTown | null>(() => {
-    if (!selectedCounty || !selectedTownName) return null;
-    return {
-      county: selectedCounty,
-      town: selectedTownName,
-      query: `${selectedTownName}, ${selectedCounty} County, Kenya`,
-    };
-  }, [selectedCounty, selectedTownName]);
-
   const mapProps: MapCanvasProps = {
     visibleClients,
     activeRepLocations,
-    selectedTown,
+    locationSearch,
     position,
     loading,
     error,
@@ -547,6 +553,7 @@ export const ClientMap: React.FC<ClientMapProps> = ({ clients, users = [], liveL
     onRequestLocation: handleRequestLocation,
     onConfirmLocation: handleConfirm,
     onCancelLocation: handleCancel,
+    onManualLocationResolved,
   };
 
   return (
@@ -563,42 +570,31 @@ export const ClientMap: React.FC<ClientMapProps> = ({ clients, users = [], liveL
 
       <div className="mb-4 border border-yellow-200 rounded-lg bg-yellow-50/70 dark:bg-yellow-900/10 dark:border-yellow-700/60 p-3">
         <div className="mb-2">
-          <h4 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Find Your Kenyan Town</h4>
-          <p className="text-xs text-gray-600 dark:text-gray-300">Select your county and town to place it on the map.</p>
+          <h4 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Type Your Exact Location</h4>
+          <p className="text-xs text-gray-600 dark:text-gray-300">
+            Enter a building, road, estate, landmark, town, or county and Google Maps will place it on the map.
+            {currentUser?.isClockedIn ? ' This also updates your live location for admins.' : ' Clock in to sync it as your live location.'}
+          </p>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-          <select
-            value={selectedCounty}
-            onChange={e => handleSelectedCountyChange(e.target.value)}
-            className="px-2.5 py-1.5 text-xs bg-white border border-gray-300 rounded-md shadow-sm dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-yellow-500"
+        <form onSubmit={handleTypedLocationSubmit} className="flex flex-col sm:flex-row gap-2">
+          <input
+            type="text"
+            value={typedLocation}
+            onChange={e => setTypedLocation(e.target.value)}
+            placeholder="e.g. Two Rivers Mall, Ruaka or Kenyatta Avenue, Nairobi"
+            className="flex-1 px-2.5 py-1.5 text-xs bg-white border border-gray-300 rounded-md shadow-sm dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-yellow-500"
+          />
+          <button
+            type="submit"
+            className="px-3 py-1.5 text-xs font-semibold text-blue-900 bg-yellow-500 rounded-md hover:bg-yellow-400 disabled:opacity-50"
+            disabled={!typedLocation.trim()}
           >
-            <option value="">Select county</option>
-            {KENYAN_COUNTIES_AND_TOWNS.map(county => (
-              <option key={county.county} value={county.county}>
-                {county.county}
-              </option>
-            ))}
-          </select>
-          <select
-            value={selectedTownName}
-            onChange={e => setSelectedTownName(e.target.value)}
-            disabled={!selectedCounty}
-            className="px-2.5 py-1.5 text-xs bg-white border border-gray-300 rounded-md shadow-sm dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100 focus:outline-none focus:ring-1 focus:ring-yellow-500 disabled:opacity-50"
-          >
-            {!selectedCounty ? (
-              <option value="">Select county first</option>
-            ) : (
-              selectedCountyTowns.map(town => (
-                <option key={town} value={town}>
-                  {town}
-                </option>
-              ))
-            )}
-          </select>
-        </div>
-        {selectedTown && (
+            Show on map
+          </button>
+        </form>
+        {locationSearch && (
           <p className="mt-2 text-xs text-gray-600 dark:text-gray-300">
-            Showing: <span className="font-semibold">{selectedTown.town}, {selectedTown.county} County</span>
+            Searching: <span className="font-semibold">{locationSearch.label}</span>
           </p>
         )}
       </div>

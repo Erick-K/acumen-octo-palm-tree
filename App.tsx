@@ -26,8 +26,15 @@ const pageTitles: { [key in Page]: string } = {
 };
 
 type ImportedClientData = Omit<Client, 'location' | 'visits'> & { address: string };
+const LOCAL_RESET_VERSION_KEY = 'appLocalResetVersion';
+
+const clearDeviceCachedAppData = () => {
+  const keysToClear = ['users', 'clients', 'products', 'orders', 'tasks', 'clockLogs', 'liveLocations'];
+  keysToClear.forEach(key => localStorage.removeItem(key));
+};
 
 const App: React.FC = () => {
+  const useMockSeedData = !import.meta.env.PROD;
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [currentPage, setCurrentPage] = useState<Page>(Page.Dashboard);
   const [isSidebarOpen, setSidebarOpen] = useState(false);
@@ -36,58 +43,59 @@ const App: React.FC = () => {
   const [sharedStateReady, setSharedStateReady] = useState(false);
   const lastSharedUpdatedAtRef = useRef<string | null>(null);
   const lastLiveLocationSavedAtRef = useRef(0);
+  const [resetVersion, setResetVersion] = useState<string>(() => localStorage.getItem(LOCAL_RESET_VERSION_KEY) || 'v1');
   
   // App-level state for data, with persistence
   const [users, setUsers] = useState<User[]>(() => {
     try {
       const saved = localStorage.getItem('users');
-      const parsed = saved ? JSON.parse(saved) : MOCK_USERS;
-      const base = Array.isArray(parsed) ? parsed : MOCK_USERS;
+      const parsed = saved ? JSON.parse(saved) : (useMockSeedData ? MOCK_USERS : []);
+      const base = Array.isArray(parsed) ? parsed : (useMockSeedData ? MOCK_USERS : []);
       return base.map((u: User) => {
         if (u.workLocation?.county && u.workLocation?.town) return u;
         const fromMock = MOCK_USERS.find(m => m.id === u.id);
         return fromMock?.workLocation ? { ...u, workLocation: fromMock.workLocation } : u;
       });
     } catch (e) {
-      return MOCK_USERS;
+      return useMockSeedData ? MOCK_USERS : [];
     }
   });
 
   const [clients, setClients] = useState<Client[]>(() => {
     try {
       const savedClients = localStorage.getItem('clients');
-      return savedClients ? JSON.parse(savedClients) : MOCK_CLIENTS;
+      return savedClients ? JSON.parse(savedClients) : (useMockSeedData ? MOCK_CLIENTS : []);
     } catch (error) {
       console.error("Failed to parse clients from localStorage", error);
-      return MOCK_CLIENTS;
+      return useMockSeedData ? MOCK_CLIENTS : [];
     }
   });
   const [products, setProducts] = useState<Product[]>(() => {
     try {
       const savedProducts = localStorage.getItem('products');
-      return savedProducts ? JSON.parse(savedProducts) : MOCK_PRODUCTS;
+      return savedProducts ? JSON.parse(savedProducts) : (useMockSeedData ? MOCK_PRODUCTS : []);
     } catch (error) {
       console.error("Failed to parse products from localStorage", error);
-      return MOCK_PRODUCTS;
+      return useMockSeedData ? MOCK_PRODUCTS : [];
     }
   });
   const [orders, setOrders] = useState<Order[]>(() => {
     try {
       const savedOrders = localStorage.getItem('orders');
-      return savedOrders ? JSON.parse(savedOrders) : MOCK_ORDERS;
+      return savedOrders ? JSON.parse(savedOrders) : (useMockSeedData ? MOCK_ORDERS : []);
     } catch (error) {
       console.error("Failed to parse orders from localStorage", error);
-      return MOCK_ORDERS;
+      return useMockSeedData ? MOCK_ORDERS : [];
     }
   });
 
   const [tasks, setTasks] = useState<Task[]>(() => {
     try {
       const savedTasks = localStorage.getItem('tasks');
-      return savedTasks ? JSON.parse(savedTasks) : MOCK_TASKS;
+      return savedTasks ? JSON.parse(savedTasks) : (useMockSeedData ? MOCK_TASKS : []);
     } catch (error) {
       console.error("Failed to parse tasks from localStorage", error);
-      return MOCK_TASKS;
+      return useMockSeedData ? MOCK_TASKS : [];
     }
   });
 
@@ -111,6 +119,7 @@ const App: React.FC = () => {
   const { position: livePosition, error: liveLocationError } = useGeolocation(shouldTrackLiveLocation, { watch: true });
 
   const applySharedData = useCallback((data: SharedAppData) => {
+    setResetVersion(data.resetVersion || 'v1');
     setUsers(data.users);
     setClients(data.clients);
     setProducts(data.products);
@@ -150,10 +159,11 @@ const App: React.FC = () => {
       localStorage.setItem('tasks', JSON.stringify(tasks));
       localStorage.setItem('clockLogs', JSON.stringify(clockLogs));
       localStorage.setItem('liveLocations', JSON.stringify(liveLocations));
+      localStorage.setItem(LOCAL_RESET_VERSION_KEY, resetVersion);
     } catch (error) {
       console.error("Failed to save data to localStorage", error);
     }
-  }, [users, clients, products, orders, tasks, clockLogs, liveLocations]);
+  }, [users, clients, products, orders, tasks, clockLogs, liveLocations, resetVersion]);
 
   useEffect(() => {
     let cancelled = false;
@@ -162,7 +172,16 @@ const App: React.FC = () => {
       .then(payload => {
         if (cancelled || !payload?.data) return;
         lastSharedUpdatedAtRef.current = payload.updatedAt;
-        const localData: SharedAppData = { users, clients, products, orders, tasks, clockLogs, liveLocations };
+        const sharedResetVersion = payload.data.resetVersion || 'v1';
+        const localResetVersion = localStorage.getItem(LOCAL_RESET_VERSION_KEY) || resetVersion;
+        if (sharedResetVersion !== localResetVersion) {
+          clearDeviceCachedAppData();
+          localStorage.setItem(LOCAL_RESET_VERSION_KEY, sharedResetVersion);
+          applySharedData(payload.data);
+          return;
+        }
+
+        const localData: SharedAppData = { resetVersion: localResetVersion, users, clients, products, orders, tasks, clockLogs, liveLocations };
         applySharedData(mergeSharedAppData(localData, payload.data));
       })
       .catch(error => {
@@ -175,12 +194,12 @@ const App: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, [applySharedData]);
+  }, [applySharedData, resetVersion]);
 
   useEffect(() => {
     if (!sharedStateReady) return;
 
-    const data: SharedAppData = { users, clients, products, orders, tasks, clockLogs, liveLocations };
+    const data: SharedAppData = { resetVersion, users, clients, products, orders, tasks, clockLogs, liveLocations };
     const timeout = window.setTimeout(() => {
       saveSharedAppState(data)
         .then(payload => {
@@ -194,7 +213,7 @@ const App: React.FC = () => {
     }, 800);
 
     return () => window.clearTimeout(timeout);
-  }, [sharedStateReady, users, clients, products, orders, tasks, clockLogs, liveLocations]);
+  }, [sharedStateReady, resetVersion, users, clients, products, orders, tasks, clockLogs, liveLocations]);
 
   useEffect(() => {
     if (!sharedStateReady) return;
@@ -252,6 +271,26 @@ const App: React.FC = () => {
     if (!liveLocationError || !currentUser?.isClockedIn) return;
     console.warn('Live location tracking failed.', liveLocationError.message);
   }, [currentUser?.isClockedIn, liveLocationError]);
+
+  const handleManualLocationResolved = useCallback((location: { lat: number; lng: number; accuracy: number; address: string }) => {
+    if (!currentUser?.isClockedIn) return;
+
+    const now = Date.now();
+    const nextLocation: LiveLocation = {
+      userId: currentUser.id,
+      lat: location.lat,
+      lng: location.lng,
+      accuracy: location.accuracy,
+      timestamp: new Date(now).toISOString(),
+      isActive: true,
+    };
+
+    setLiveLocations(prev => [
+      nextLocation,
+      ...prev.filter(savedLocation => savedLocation.userId !== currentUser.id),
+    ]);
+    lastLiveLocationSavedAtRef.current = now;
+  }, [currentUser?.id, currentUser?.isClockedIn]);
 
   useEffect(() => {
     const handleStorage = (event: StorageEvent) => {
@@ -594,6 +633,8 @@ const App: React.FC = () => {
             lastClockLog={userClockLogs[0]}
             users={users}
             liveLocations={currentUser.role === 'Admin' ? liveLocations : []}
+            currentUser={currentUser}
+            onManualLocationResolved={handleManualLocationResolved}
         />;
       case Page.Products:
         return <Products 
@@ -646,7 +687,7 @@ const App: React.FC = () => {
       case Page.Profile:
           return <UserProfile user={currentUser} onUpdateUser={handleUpdateUserProfile} clockLogs={userClockLogs} />;
       default:
-        return <Dashboard clients={userClients} products={products} orders={userOrders} tasks={userTasks} users={users} liveLocations={currentUser.role === 'Admin' ? liveLocations : []} />;
+        return <Dashboard clients={userClients} products={products} orders={userOrders} tasks={userTasks} users={users} liveLocations={currentUser.role === 'Admin' ? liveLocations : []} currentUser={currentUser} onManualLocationResolved={handleManualLocationResolved} />;
     }
   };
 

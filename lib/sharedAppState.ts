@@ -1,6 +1,7 @@
 import type { User, Client, Product, Order, Task, ClockLog, LiveLocation } from '../types';
 
 export interface SharedAppData {
+  resetVersion: string;
   users: User[];
   clients: Client[];
   products: Product[];
@@ -121,7 +122,11 @@ function mergeByUserId(localItems: LiveLocation[], sharedItems: LiveLocation[]):
 }
 
 export function normalizeSharedAppData(data: Partial<SharedAppData>): SharedAppData {
+  const resetVersion = typeof data.resetVersion === 'string' && data.resetVersion.trim().length > 0
+    ? data.resetVersion.trim()
+    : 'v1';
   return {
+    resetVersion,
     users: Array.isArray(data.users) ? data.users : [],
     clients: Array.isArray(data.clients) ? data.clients : [],
     products: Array.isArray(data.products) ? data.products : [],
@@ -135,6 +140,7 @@ export function normalizeSharedAppData(data: Partial<SharedAppData>): SharedAppD
 /** Shared data wins on conflicts, while local-only records are preserved for first migration. */
 export function mergeSharedAppData(localData: SharedAppData, sharedData: SharedAppData): SharedAppData {
   return {
+    resetVersion: sharedData.resetVersion || localData.resetVersion,
     users: mergeById(localData.users, sharedData.users),
     clients: mergeById(localData.clients, sharedData.clients),
     products: mergeById(localData.products, sharedData.products),

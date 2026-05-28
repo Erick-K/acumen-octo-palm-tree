@@ -13,6 +13,8 @@ interface DashboardProps {
   lastClockLog?: ClockLog;
   users: User[];
   liveLocations: LiveLocation[];
+  currentUser: User;
+  onManualLocationResolved?: (location: { lat: number; lng: number; accuracy: number; address: string }) => void;
 }
 
 const StatCard: React.FC<{ title: string; value: string | number; description: string; color?: string }> = ({ title, value, description, color }) => (
@@ -44,7 +46,7 @@ const isOverdue = (dueDate: string) => new Date(dueDate) < new Date() && !isToda
 const isToday = (dueDate: string) => new Date(dueDate).toDateString() === new Date().toDateString();
 
 
-export const Dashboard: React.FC<DashboardProps> = ({ clients, products, orders, tasks, isClockedIn, lastClockLog, users, liveLocations }) => {
+export const Dashboard: React.FC<DashboardProps> = ({ clients, products, orders, tasks, isClockedIn, lastClockLog, users, liveLocations, currentUser, onManualLocationResolved }) => {
     const totalStock = products.reduce((sum, p) => sum + p.stock, 0);
     const recentOrders = [...orders].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).slice(0, 5);
     const upcomingTasks = tasks
@@ -138,7 +140,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ clients, products, orders,
                     </div>
                 </div>
                 <div>
-                    <ClientMap clients={clients} users={users} liveLocations={liveLocations} />
+                    <ClientMap
+                        clients={clients}
+                        users={users}
+                        liveLocations={liveLocations}
+                        currentUser={currentUser}
+                        onManualLocationResolved={onManualLocationResolved}
+                    />
                 </div>
             </div>
         </div>
