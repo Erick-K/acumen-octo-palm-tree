@@ -115,8 +115,12 @@ function mergeById<T extends { id: string | number }>(localItems: T[], sharedIte
   return Array.from(merged.values());
 }
 
+/** Prefer local user records on id conflicts so newly created users are not dropped. */
 export function mergeUsers(localUsers: User[], sharedUsers: User[]): User[] {
-  return mergeById(localUsers, sharedUsers);
+  const merged = new Map<number, User>();
+  sharedUsers.forEach(user => merged.set(user.id, user));
+  localUsers.forEach(user => merged.set(user.id, user));
+  return Array.from(merged.values());
 }
 
 function mergeByUserId(localItems: LiveLocation[], sharedItems: LiveLocation[]): LiveLocation[] {
@@ -164,7 +168,7 @@ export function mergeSharedAppData(localData: SharedAppData, sharedData: SharedA
   return {
     resetVersion: sharedData.resetVersion || localData.resetVersion,
     branding: useLocalBranding ? localData.branding : sharedData.branding || localData.branding,
-    users: mergeById(localData.users, sharedData.users),
+    users: mergeUsers(localData.users, sharedData.users),
     clients: mergeById(localData.clients, sharedData.clients),
     products: mergeById(localData.products, sharedData.products),
     orders: mergeById(localData.orders, sharedData.orders),

@@ -166,6 +166,10 @@ export const UserManagement: React.FC<UserManagementProps> = ({ users, currentUs
       workLocation:
         newUserWorkLocation.county && newUserWorkLocation.town ? newUserWorkLocation : undefined,
     });
+    setSearchTerm('');
+    setRoleFilter('All');
+    setStatusFilter('All');
+    setAccountFilter('All');
     setShowCreateModal(false);
     setNewUser({ name: '', username: '', password: '', pinNumber: '1234', role: 'Sales Representative' });
     setNewUserWorkLocation({ county: '', town: '' });

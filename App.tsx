@@ -235,8 +235,12 @@ const App: React.FC = () => {
           return;
         }
 
-        const localData: SharedAppData = { resetVersion: localResetVersion, branding, users, clients, products, orders, tasks, clockLogs, liveLocations };
-        applySharedData(mergeSharedAppData(localData, payload.data));
+        applySharedData(
+          mergeSharedAppData(
+            { ...sharedDataRef.current, resetVersion: localResetVersion },
+            payload.data
+          )
+        );
       })
       .catch(error => {
         console.warn('Shared app data is unavailable; using local device data.', error);
@@ -248,7 +252,7 @@ const App: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, [applySharedData, resetVersion, branding]);
+  }, [applySharedData, resetVersion]);
 
   useEffect(() => {
     if (!sharedStateReady) return;
@@ -515,13 +519,11 @@ const App: React.FC = () => {
       if (payload?.updatedAt) {
         lastSharedUpdatedAtRef.current = payload.updatedAt;
       }
-      if (payload?.data) {
-        applySharedData(payload.data);
-      }
+      // Keep current in-memory state; server responses can be stale during concurrent sync.
     } catch (error) {
       console.warn('Immediate shared save failed; will retry on autosave.', error);
     }
-  }, [resetVersion, branding, users, clients, products, orders, tasks, clockLogs, liveLocations, applySharedData]);
+  }, [resetVersion, branding, users, clients, products, orders, tasks, clockLogs, liveLocations]);
 
   const handleUpdateBranding = (nextBranding: AppBranding) => {
     const normalizedBranding = {
