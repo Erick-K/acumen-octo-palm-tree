@@ -52,6 +52,17 @@ const App: React.FC = () => {
   const [sharedStateReady, setSharedStateReady] = useState(false);
   const lastSharedUpdatedAtRef = useRef<string | null>(null);
   const lastLiveLocationSavedAtRef = useRef(0);
+  const sharedDataRef = useRef<SharedAppData>({
+    resetVersion: 'v1',
+    branding: DEFAULT_APP_BRANDING,
+    users: [],
+    clients: [],
+    products: [],
+    orders: [],
+    tasks: [],
+    clockLogs: [],
+    liveLocations: [],
+  });
   const [resetVersion, setResetVersion] = useState<string>(() => localStorage.getItem(LOCAL_RESET_VERSION_KEY) || 'v1');
   const [branding, setBranding] = useState<AppBranding>(() => {
     try {
@@ -193,6 +204,20 @@ const App: React.FC = () => {
   }, [users, clients, products, orders, tasks, clockLogs, liveLocations, resetVersion, branding]);
 
   useEffect(() => {
+    sharedDataRef.current = {
+      resetVersion,
+      branding,
+      users,
+      clients,
+      products,
+      orders,
+      tasks,
+      clockLogs,
+      liveLocations,
+    };
+  }, [resetVersion, branding, users, clients, products, orders, tasks, clockLogs, liveLocations]);
+
+  useEffect(() => {
     let cancelled = false;
 
     loadSharedAppState()
@@ -253,7 +278,7 @@ const App: React.FC = () => {
           if (!payload?.data || !payload.updatedAt) return;
           if (!isIsoTimestampNewer(payload.updatedAt, lastSharedUpdatedAtRef.current)) return;
           lastSharedUpdatedAtRef.current = payload.updatedAt;
-          applySharedData(payload.data);
+          applySharedData(mergeSharedAppData(sharedDataRef.current, payload.data));
         })
         .catch(() => {
           // Keep the app usable offline or when the Netlify function is unavailable.
@@ -433,17 +458,33 @@ const App: React.FC = () => {
   };
 
   const handleAddUser = (newUserData: Omit<User, 'id'>) => {
+    const trimmedUsername = newUserData.username.trim();
+    if (!trimmedUsername) {
+      alert('Username is required.');
+      return;
+    }
+    if (users.some(u => u.username.trim().toLowerCase() === trimmedUsername.toLowerCase())) {
+      alert('That username is already in use. Please choose a different one.');
+      return;
+    }
+
     const newUser: User = {
-        ...newUserData,
-        id: users.length > 0 ? Math.max(...users.map(u => u.id)) + 1 : 1,
-        isActive: true,
-        isClockedIn: false,
+      ...newUserData,
+      name: newUserData.name.trim(),
+      username: trimmedUsername,
+      id: users.length > 0 ? Math.max(...users.map(u => u.id)) + 1 : 1,
+      isActive: true,
+      isClockedIn: false,
     };
-    setUsers(prev => [...prev, newUser]);
+    const nextUsers = [...users, newUser];
+    setUsers(nextUsers);
+    lastSharedUpdatedAtRef.current = new Date().toISOString();
+    persistSharedSnapshot({ users: nextUsers });
   };
 
   const handleDeleteUser = (userId: number) => {
-    setUsers(prev => prev.filter(user => user.id !== userId));
+    const nextUsers = users.filter(user => user.id !== userId);
+    setUsers(nextUsers);
     setTasks(prev => prev.filter(task => task.assignedToId !== userId));
     setClients(prev => prev.filter(client => client.salesRepId !== userId));
     setOrders(prev => prev.filter(order => order.salesRepId !== userId));
@@ -452,6 +493,8 @@ const App: React.FC = () => {
     if (currentUser?.id === userId) {
       setCurrentUser(null);
     }
+    lastSharedUpdatedAtRef.current = new Date().toISOString();
+    persistSharedSnapshot({ users: nextUsers });
   };
 
   const persistSharedSnapshot = useCallback(async (overrides?: Partial<SharedAppData>) => {

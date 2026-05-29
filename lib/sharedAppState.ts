@@ -115,6 +115,10 @@ function mergeById<T extends { id: string | number }>(localItems: T[], sharedIte
   return Array.from(merged.values());
 }
 
+export function mergeUsers(localUsers: User[], sharedUsers: User[]): User[] {
+  return mergeById(localUsers, sharedUsers);
+}
+
 function mergeByUserId(localItems: LiveLocation[], sharedItems: LiveLocation[]): LiveLocation[] {
   const merged = new Map<number, LiveLocation>();
   localItems.forEach(item => merged.set(item.userId, item));

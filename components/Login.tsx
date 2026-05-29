@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import type { User, AppBranding } from '../types';
 import { CompanyLogo } from './icons';
-import { loadSharedAppState } from '../lib/sharedAppState';
+import { loadSharedAppState, mergeUsers } from '../lib/sharedAppState';
 
 interface LoginProps {
   onLogin: (user: User) => void;
@@ -37,18 +37,26 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
 
     const loadUsers = async () => {
       try {
+        let localUsers: User[] = [];
         const saved = localStorage.getItem('users');
-        if (saved && !cancelled) {
-          setUsers(JSON.parse(saved));
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed)) {
+            localUsers = parsed;
+          }
         } else {
           const m = await import('../data/mockData');
-          if (!cancelled) setUsers(m.MOCK_USERS);
+          localUsers = m.MOCK_USERS;
+        }
+        if (!cancelled) {
+          setUsers(localUsers);
         }
 
         const shared = await loadSharedAppState();
-        if (!cancelled && shared?.data?.users?.length) {
-          setUsers(shared.data.users);
-          localStorage.setItem('users', JSON.stringify(shared.data.users));
+        if (!cancelled && shared?.data?.users) {
+          const mergedUsers = mergeUsers(localUsers, shared.data.users);
+          setUsers(mergedUsers);
+          localStorage.setItem('users', JSON.stringify(mergedUsers));
         }
         if (!cancelled && shared?.data?.branding) {
           const sharedBranding: AppBranding = {
@@ -90,7 +98,9 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
       return;
     }
 
-    const user = users.find(u => u.username === username);
+    const user = users.find(
+      u => u.username.trim().toLowerCase() === username.trim().toLowerCase()
+    );
 
     if (user && user.password === password) {
       if (user.isActive === false) {
