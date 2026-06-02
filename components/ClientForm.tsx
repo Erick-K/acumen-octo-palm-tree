@@ -3,6 +3,8 @@ import React, { useState } from 'react';
 import type { Client, User } from '../types';
 import { KENYAN_ADDRESS_SUGGESTIONS } from '../data/kenyanLocations';
 
+const KRA_PIN_REGEX = /^[A-Z]\d{9}[A-Z]$/;
+
 interface ClientFormProps {
   onAddClient: (newClient: Omit<Client, 'id' | 'location' | 'visits'> & { address: string, companyPin?: string }) => void;
   onCancel: () => void;
@@ -28,6 +30,11 @@ export const ClientForm: React.FC<ClientFormProps> = ({ onAddClient, onCancel, s
       alert('Company name, contact name, and address are required.');
       return;
     }
+    const normalizedCompanyPin = companyPin.trim().toUpperCase();
+    if (normalizedCompanyPin && !KRA_PIN_REGEX.test(normalizedCompanyPin)) {
+      alert('Company PIN must be 1 letter, 9 numbers, and 1 final letter (example: P051188806D).');
+      return;
+    }
     onAddClient({
       company,
       name,
@@ -35,7 +42,7 @@ export const ClientForm: React.FC<ClientFormProps> = ({ onAddClient, onCancel, s
       email: email.trim() || undefined,
       phone: phone.trim() || undefined,
       address,
-      companyPin: companyPin.trim() || undefined,
+      companyPin: normalizedCompanyPin || undefined,
       isSupplier: isSupplier || undefined,
       supplierCategory: isSupplier ? (supplierCategory.trim() || undefined) : undefined,
     });
@@ -68,12 +75,12 @@ export const ClientForm: React.FC<ClientFormProps> = ({ onAddClient, onCancel, s
                 type="text" 
                 id="companyPin" 
                 value={companyPin} 
-                onChange={(e) => setCompanyPin(e.target.value)} 
+                onChange={(e) => setCompanyPin(e.target.value.toUpperCase())} 
                 className="input-field" 
-                placeholder="e.g. 1234"
-                maxLength={8}
+                placeholder="e.g. P051188806D"
+                maxLength={11}
               />
-              <p className="mt-1 text-xs text-gray-500">Business verification code for this company.</p>
+              <p className="mt-1 text-xs text-gray-500">KRA PIN format: 1 letter, 9 digits, then 1 letter (example: P051188806D).</p>
             </div>
             <div className="sm:col-span-2">
               <label className="flex items-center space-x-2 cursor-pointer">

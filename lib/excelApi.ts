@@ -1,4 +1,5 @@
 type XLSXModule = typeof import('https://esm.sh/xlsx@0.18.5');
+const KRA_PIN_REGEX = /^[A-Z]\d{9}[A-Z]$/;
 
 let xlsxLoader: Promise<XLSXModule> | null = null;
 
@@ -87,9 +88,12 @@ export async function importClientsExcel(file: File): Promise<{ data: ImportedCl
       throw new Error(`Row ${i + 2}: Invalid or missing data`);
     }
 
-    const companyPin = String(getRowValue(row, 'companyPin') || getRowValue(row, 'companypin') || '').trim();
+    const companyPin = String(getRowValue(row, 'companyPin') || getRowValue(row, 'companypin') || '').trim().toUpperCase();
     const email = String(getRowValue(row, 'email') || '').trim();
     const phone = String(getRowValue(row, 'phone') || '').trim();
+    if (companyPin && !KRA_PIN_REGEX.test(companyPin)) {
+      throw new Error(`Row ${i + 2}: Company PIN must be 1 letter, 9 numbers, and 1 final letter (example: P051188806D).`);
+    }
 
     return {
       id,

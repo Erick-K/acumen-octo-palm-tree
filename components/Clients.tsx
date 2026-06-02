@@ -7,6 +7,8 @@ import { importClientsExcel, exportClientsExcel, downloadExcel } from '../lib/ex
 import { formatKes } from '../lib/formatCurrency';
 import { KENYAN_ADDRESS_SUGGESTIONS } from '../data/kenyanLocations';
 
+const KRA_PIN_REGEX = /^[A-Z]\d{9}[A-Z]$/;
+
 interface ClientsProps {
   clients: Client[];
   orders: Order[];
@@ -90,8 +92,14 @@ const ClientDetails: React.FC<{
     };
 
     const handleSave = () => {
+        const normalizedCompanyPin = (editedClient.companyPin || '').trim().toUpperCase();
+        if (normalizedCompanyPin && !KRA_PIN_REGEX.test(normalizedCompanyPin)) {
+            alert('Company PIN must be 1 letter, 9 numbers, and 1 final letter (example: P051188806D).');
+            return;
+        }
         onUpdateClient({
             ...editedClient,
+            companyPin: normalizedCompanyPin || undefined,
             isSupplier: isSupplier || undefined,
             supplierCategory: isSupplier ? (supplierCategory.trim() || undefined) : undefined,
         });
@@ -110,7 +118,7 @@ const ClientDetails: React.FC<{
                         </div>
                         <div>
                             <label htmlFor="companyPin" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Company PIN</label>
-                            <input type="text" name="companyPin" id="companyPin" value={editedClient.companyPin || ''} onChange={handleInputChange} className="input-field" />
+                            <input type="text" name="companyPin" id="companyPin" value={editedClient.companyPin || ''} onChange={(e) => setEditedClient(prev => ({ ...prev, companyPin: e.target.value.toUpperCase() }))} className="input-field" maxLength={11} placeholder="P051188806D" />
                         </div>
                          <div>
                             <label htmlFor="name" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Contact Name</label>
@@ -423,7 +431,11 @@ export const Clients: React.FC<ClientsProps> = ({ clients, orders, salesReps, on
                     if (isNaN(id) || isNaN(salesRepId) || !clientData.company || !clientData.name || !clientData.address) {
                         throw new Error(`Row ${index + 2}: Invalid or missing data.`);
                     }
-                    return { id, company: clientData.company, name: clientData.name, companyPin: clientData.companyPin || undefined, salesRepId, email: clientData.email || undefined, phone: clientData.phone || undefined, address: clientData.address };
+                    const normalizedCompanyPin = String(clientData.companyPin || '').trim().toUpperCase();
+                    if (normalizedCompanyPin && !KRA_PIN_REGEX.test(normalizedCompanyPin)) {
+                        throw new Error(`Row ${index + 2}: Company PIN must be 1 letter, 9 numbers, and 1 final letter (example: P051188806D).`);
+                    }
+                    return { id, company: clientData.company, name: clientData.name, companyPin: normalizedCompanyPin || undefined, salesRepId, email: clientData.email || undefined, phone: clientData.phone || undefined, address: clientData.address };
                 });
                 onImportClients(importedClientsData);
                 setNotification({ type: 'success', message: `${importedClientsData.length} clients were successfully imported/updated from CSV.` });
