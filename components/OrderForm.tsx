@@ -59,16 +59,27 @@ export const OrderForm: React.FC<OrderFormProps> = ({ clients, products, salesRe
 
   const normalizedProductSearch = productSearchTerm.trim().toLowerCase();
   const getDisplayVariation = (product: Product) => {
-    const variationForDisplay = product.variations?.find(variation =>
-      /size|weight|volume|unit|measure|pack/i.test(variation.name)
-    );
-    if (variationForDisplay && variationForDisplay.options.length > 0) {
-      return variationForDisplay.options[0];
+    const sizeLikeOptionPattern = /\b\d+(?:\.\d+)?\s?(?:g|kg|mg|ml|l|litre|litres|pcs|pc|pack)\b/i;
+
+    // 1) Look through all variation options and pick the first size-like one.
+    const allVariationOptions =
+      product.variations?.flatMap(variation => variation.options.map(option => option.trim())) ?? [];
+    const sizeLikeOption = allVariationOptions.find(option => sizeLikeOptionPattern.test(option));
+    if (sizeLikeOption) {
+      return sizeLikeOption;
     }
 
-    // Fallback: detect common size units directly from product name/description.
+    // 2) Prefer variations whose names usually represent size/measure and show first option.
+    const variationForDisplay = product.variations?.find(variation =>
+      /size|weight|volume|unit|measure|pack|qty|quantity/i.test(variation.name)
+    );
+    if (variationForDisplay && variationForDisplay.options.length > 0) {
+      return variationForDisplay.options[0].trim();
+    }
+
+    // 3) Fallback: detect common size units directly from product name/description.
     const sizeMatch = `${product.name} ${product.description}`.match(
-      /\b\d+(?:\.\d+)?\s?(?:g|kg|mg|ml|l|litre|litres|pcs|pc|pack)\b/i
+      sizeLikeOptionPattern
     );
     return sizeMatch ? sizeMatch[0] : '';
   };
