@@ -60,10 +60,17 @@ export const OrderForm: React.FC<OrderFormProps> = ({ clients, products, salesRe
   const normalizedProductSearch = productSearchTerm.trim().toLowerCase();
   const getDisplayVariation = (product: Product) => {
     const variationForDisplay = product.variations?.find(variation =>
-      /size|weight|volume|unit|measure/i.test(variation.name)
-    ) ?? product.variations?.[0];
-    if (!variationForDisplay || variationForDisplay.options.length === 0) return '';
-    return variationForDisplay.options.join('/');
+      /size|weight|volume|unit|measure|pack/i.test(variation.name)
+    );
+    if (variationForDisplay && variationForDisplay.options.length > 0) {
+      return variationForDisplay.options[0];
+    }
+
+    // Fallback: detect common size units directly from product name/description.
+    const sizeMatch = `${product.name} ${product.description}`.match(
+      /\b\d+(?:\.\d+)?\s?(?:g|kg|mg|ml|l|litre|litres|pcs|pc|pack)\b/i
+    );
+    return sizeMatch ? sizeMatch[0] : '';
   };
   const selectableProducts = useMemo(() => {
     return products.filter(product => {
