@@ -58,14 +58,12 @@ export const OrderForm: React.FC<OrderFormProps> = ({ clients, products, salesRe
   }, [items]);
 
   const normalizedProductSearch = productSearchTerm.trim().toLowerCase();
-  const getUnitOfMeasure = (product: Product) => {
-    const unitVariation = product.variations?.find(variation =>
-      /unit|uom|measure/i.test(variation.name)
-    );
-    if (unitVariation && unitVariation.options.length > 0) {
-      return unitVariation.options.join('/');
-    }
-    return product.category || 'N/A';
+  const getDisplayVariation = (product: Product) => {
+    const variationForDisplay = product.variations?.find(variation =>
+      /size|weight|volume|unit|measure/i.test(variation.name)
+    ) ?? product.variations?.[0];
+    if (!variationForDisplay || variationForDisplay.options.length === 0) return '';
+    return variationForDisplay.options.join('/');
   };
   const selectableProducts = useMemo(() => {
     return products.filter(product => {
@@ -157,7 +155,9 @@ export const OrderForm: React.FC<OrderFormProps> = ({ clients, products, salesRe
                 <option value="" disabled>-- Select a product --</option>
                 {selectableProducts.map(p => (
                   <option key={p.id} value={p.id}>
-                    {p.name} (UOM: {getUnitOfMeasure(p)}) - {p.stock} in stock
+                    {p.name}
+                    {getDisplayVariation(p) ? ` ${getDisplayVariation(p)}` : ''}
+                    {` - ${p.stock} in stock`}
                   </option>
                 ))}
               </select>
