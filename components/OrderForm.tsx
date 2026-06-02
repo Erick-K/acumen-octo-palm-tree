@@ -60,6 +60,11 @@ export const OrderForm: React.FC<OrderFormProps> = ({ clients, products, salesRe
   const normalizedProductSearch = productSearchTerm.trim().toLowerCase();
   const getDisplayVariation = (product: Product) => {
     const sizeLikeOptionPattern = /\b\d+(?:\.\d+)?\s?(?:g|kg|mg|ml|l|litre|litres|pcs|pc|pack)\b/i;
+    const descriptionText = product.description?.trim() || '';
+    const descriptionSizeMatch = descriptionText.match(sizeLikeOptionPattern);
+    if (descriptionSizeMatch) {
+      return descriptionSizeMatch[0];
+    }
 
     // 1) Look through all variation options and pick the first size-like one.
     const allVariationOptions =
@@ -69,7 +74,12 @@ export const OrderForm: React.FC<OrderFormProps> = ({ clients, products, salesRe
       return sizeLikeOption;
     }
 
-    // 2) Prefer variations whose names usually represent size/measure and show first option.
+    // 2) If a product has variations, still show the first option so every varied product is labeled.
+    if (allVariationOptions.length > 0) {
+      return allVariationOptions[0];
+    }
+
+    // 3) Prefer variations whose names usually represent size/measure and show first option.
     const variationForDisplay = product.variations?.find(variation =>
       /size|weight|volume|unit|measure|pack|qty|quantity/i.test(variation.name)
     );
@@ -77,11 +87,14 @@ export const OrderForm: React.FC<OrderFormProps> = ({ clients, products, salesRe
       return variationForDisplay.options[0].trim();
     }
 
-    // 3) Fallback: detect common size units directly from product name/description.
+    // 4) Fallback: detect common size units directly from product name/description.
     const sizeMatch = `${product.name} ${product.description}`.match(
       sizeLikeOptionPattern
     );
-    return sizeMatch ? sizeMatch[0] : '';
+    if (sizeMatch) return sizeMatch[0];
+
+    // 5) Last fallback so every product shows a clear label in the picker.
+    return 'Standard';
   };
   const selectableProducts = useMemo(() => {
     return products.filter(product => {
