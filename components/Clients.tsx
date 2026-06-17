@@ -6,8 +6,7 @@ import { ClientForm } from './ClientForm';
 import { importClientsExcel, exportClientsExcel, downloadExcel } from '../lib/excelApi';
 import { formatKes } from '../lib/formatCurrency';
 import { KENYAN_ADDRESS_SUGGESTIONS } from '../data/kenyanLocations';
-
-const KRA_PIN_REGEX = /^[A-Z]\d{9}[A-Z]$/;
+import { clientHasNoPin, isValidKraPin, normalizeKraPin } from '../lib/kraPin';
 
 interface ClientsProps {
   clients: Client[];
@@ -61,12 +60,14 @@ const ClientDetails: React.FC<{
     const [editedClient, setEditedClient] = useState(client);
     const [isSupplier, setIsSupplier] = useState<boolean>(client.isSupplier ?? false);
     const [supplierCategory, setSupplierCategory] = useState<string>(client.supplierCategory ?? '');
+    const [pinNotAvailable, setPinNotAvailable] = useState<boolean>(client.pinNotAvailable ?? clientHasNoPin(client));
 
     useEffect(() => {
         // Reset form when selected client changes
         setEditedClient(client);
         setIsSupplier(client.isSupplier ?? false);
         setSupplierCategory(client.supplierCategory ?? '');
+        setPinNotAvailable(client.pinNotAvailable ?? clientHasNoPin(client));
         setIsEditing(false);
     }, [client]);
 
@@ -92,18 +93,26 @@ const ClientDetails: React.FC<{
     };
 
     const handleSave = () => {
-        const normalizedCompanyPin = (editedClient.companyPin || '').trim().toUpperCase();
-        if (normalizedCompanyPin && !KRA_PIN_REGEX.test(normalizedCompanyPin)) {
+        const normalizedCompanyPin = normalizeKraPin(editedClient.companyPin);
+        if (!pinNotAvailable && normalizedCompanyPin && !isValidKraPin(normalizedCompanyPin)) {
             alert('Company PIN must be 1 letter, 9 numbers, and 1 final letter (example: P051188806D).');
             return;
         }
         onUpdateClient({
             ...editedClient,
-            companyPin: normalizedCompanyPin || undefined,
+            companyPin: pinNotAvailable ? undefined : normalizedCompanyPin || undefined,
+            pinNotAvailable: pinNotAvailable || undefined,
             isSupplier: isSupplier || undefined,
             supplierCategory: isSupplier ? (supplierCategory.trim() || undefined) : undefined,
         });
         setIsEditing(false);
+    };
+
+    const handlePinAvailabilityChange = (checked: boolean) => {
+        setPinNotAvailable(checked);
+        if (checked) {
+            setEditedClient(prev => ({ ...prev, companyPin: undefined }));
+        }
     };
 
     return (
@@ -117,9 +126,22 @@ const ClientDetails: React.FC<{
                             <input type="text" name="company" id="company" value={editedClient.company} onChange={handleInputChange} className="input-field" />
                         </div>
                         <div>
-                            <label htmlFor="companyPin" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Company PIN</label>
-                            <input type="text" name="companyPin" id="companyPin" value={editedClient.companyPin || ''} onChange={(e) => setEditedClient(prev => ({ ...prev, companyPin: e.target.value.toUpperCase() }))} className="input-field" maxLength={11} placeholder="P051188806D" />
+                            <label className="flex items-center space-x-2 cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    checked={pinNotAvailable}
+                                    onChange={(e) => handlePinAvailabilityChange(e.target.checked)}
+                                    className="w-4 h-4 text-yellow-600 border-gray-300 rounded focus:ring-yellow-500 dark:bg-gray-700 dark:border-gray-600"
+                                />
+                                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Client has no KRA PIN</span>
+                            </label>
                         </div>
+                        {!pinNotAvailable && (
+                            <div>
+                                <label htmlFor="companyPin" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Company PIN (Optional)</label>
+                                <input type="text" name="companyPin" id="companyPin" value={editedClient.companyPin || ''} onChange={(e) => setEditedClient(prev => ({ ...prev, companyPin: e.target.value.toUpperCase() }))} className="input-field" maxLength={11} placeholder="P051188806D" />
+                            </div>
+                        )}
                          <div>
                             <label htmlFor="name" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Contact Name</label>
                             <input type="text" name="name" id="name" value={editedClient.name} onChange={handleInputChange} className="input-field" />
@@ -208,6 +230,11 @@ const ClientDetails: React.FC<{
                             {client.companyPin && (
                                 <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400 border border-yellow-200 dark:border-yellow-800">
                                     PIN: {client.companyPin}
+                                </span>
+                            )}
+                            {clientHasNoPin(client) && (
+                                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-bold bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-600">
+                                    No KRA PIN
                                 </span>
                             )}
                         </div>
@@ -431,11 +458,21 @@ export const Clients: React.FC<ClientsProps> = ({ clients, orders, salesReps, on
                     if (isNaN(id) || isNaN(salesRepId) || !clientData.company || !clientData.name || !clientData.address) {
                         throw new Error(`Row ${index + 2}: Invalid or missing data.`);
                     }
-                    const normalizedCompanyPin = String(clientData.companyPin || '').trim().toUpperCase();
-                    if (normalizedCompanyPin && !KRA_PIN_REGEX.test(normalizedCompanyPin)) {
+                    const normalizedCompanyPin = normalizeKraPin(String(clientData.companyPin || ''));
+                    if (normalizedCompanyPin && !isValidKraPin(normalizedCompanyPin)) {
                         throw new Error(`Row ${index + 2}: Company PIN must be 1 letter, 9 numbers, and 1 final letter (example: P051188806D).`);
                     }
-                    return { id, company: clientData.company, name: clientData.name, companyPin: normalizedCompanyPin || undefined, salesRepId, email: clientData.email || undefined, phone: clientData.phone || undefined, address: clientData.address };
+                    return {
+                        id,
+                        company: clientData.company,
+                        name: clientData.name,
+                        companyPin: normalizedCompanyPin || undefined,
+                        pinNotAvailable: !normalizedCompanyPin ? true : undefined,
+                        salesRepId,
+                        email: clientData.email || undefined,
+                        phone: clientData.phone || undefined,
+                        address: clientData.address,
+                    };
                 });
                 onImportClients(importedClientsData);
                 setNotification({ type: 'success', message: `${importedClientsData.length} clients were successfully imported/updated from CSV.` });

@@ -58,7 +58,9 @@ export interface Client {
   id: number;
   name: string;
   company: string;
-  companyPin?: string; // New business field for client verification
+  companyPin?: string;
+  /** Client was registered without a KRA PIN; orders are allowed without one. */
+  pinNotAvailable?: boolean;
   isSupplier?: boolean; // When true, treat this company as a supplier
   supplierCategory?: string; // e.g. Packaging, Raw Materials, Transport, Services
   salesRepId: number;
@@ -83,6 +85,12 @@ export interface Product {
   description: string;
   price: number;
   stock: number;
+  /** Inventory unit for this product row. */
+  packagingUnit?: 'pieces' | 'outers' | 'cartons';
+  /** Number of pieces that make one outer. */
+  piecesPerOuter?: number;
+  /** Number of pieces that make one carton. */
+  piecesPerCarton?: number;
   category: string;
   imageUrl?: string;
   variations?: ProductVariation[];
@@ -92,6 +100,7 @@ export interface OrderItem {
   productId: number;
   quantity: number;
   priceAtSale: number;
+  packagingUnit?: 'pieces' | 'outers' | 'cartons';
 }
 
 export interface Order {

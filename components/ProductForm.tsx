@@ -1,19 +1,12 @@
 
-import React, { useState } from 'react';
-import type { Product, ProductVariation } from '../types';
-import { TrashIcon } from './icons';
+import React, { useMemo, useState } from 'react';
+import type { Product } from '../types';
+import { getPackCountFromDescription } from '../lib/productPackaging';
 
 interface ProductFormProps {
   initialProduct?: Product;
   onSave: (product: Omit<Product, 'id'>) => void;
   onCancel: () => void;
-}
-
-// Helper type for form state
-interface VariationFormState {
-    name: string;
-    options: string[];
-    currentOptionInput: string;
 }
 
 export const ProductForm: React.FC<ProductFormProps> = ({ initialProduct, onSave, onCancel }) => {
@@ -22,60 +15,23 @@ export const ProductForm: React.FC<ProductFormProps> = ({ initialProduct, onSave
   const [category, setCategory] = useState(initialProduct?.category || '');
   const [price, setPrice] = useState(initialProduct?.price?.toString() || '');
   const [stock, setStock] = useState(initialProduct?.stock?.toString() || '');
+  const [packagingUnit, setPackagingUnit] = useState<Product['packagingUnit']>(initialProduct?.packagingUnit || 'pieces');
+  const [piecesPerOuter, setPiecesPerOuter] = useState((initialProduct?.piecesPerOuter ?? 1).toString());
+  const [piecesPerCarton, setPiecesPerCarton] = useState((initialProduct?.piecesPerCarton ?? 1).toString());
   const [imageUrl, setImageUrl] = useState(initialProduct?.imageUrl || '');
-  
-  // Manage variations with explicit options array and an input buffer for new options
-  const [variations, setVariations] = useState<VariationFormState[]>(
-    initialProduct?.variations?.map(v => ({
-        name: v.name,
-        options: [...v.options],
-        currentOptionInput: ''
-    })) || []
+
+  const packFromDescription = useMemo(
+    () => getPackCountFromDescription(description),
+    [description]
   );
 
-  const handleAddVariation = () => {
-    setVariations([...variations, { name: '', options: [], currentOptionInput: '' }]);
-  };
-
-  const handleRemoveVariation = (index: number) => {
-    const newVariations = [...variations];
-    newVariations.splice(index, 1);
-    setVariations(newVariations);
-  };
-
-  const handleVariationNameChange = (index: number, newName: string) => {
-    const newVariations = [...variations];
-    newVariations[index].name = newName;
-    setVariations(newVariations);
-  };
-
-  const handleOptionInputChange = (index: number, value: string) => {
-    const newVariations = [...variations];
-    newVariations[index].currentOptionInput = value;
-    setVariations(newVariations);
-  };
-
-  const handleAddOption = (index: number) => {
-      const variation = variations[index];
-      if (!variation.currentOptionInput.trim()) return;
-      
-      const newVariations = [...variations];
-      newVariations[index].options = [...variation.options, variation.currentOptionInput.trim()];
-      newVariations[index].currentOptionInput = '';
-      setVariations(newVariations);
-  };
-
-  const handleRemoveOption = (variationIndex: number, optionIndex: number) => {
-      const newVariations = [...variations];
-      newVariations[variationIndex].options = newVariations[variationIndex].options.filter((_, i) => i !== optionIndex);
-      setVariations(newVariations);
-  };
-
-  const handleKeyDownOption = (index: number, e: React.KeyboardEvent) => {
-      if (e.key === 'Enter') {
-          e.preventDefault();
-          handleAddOption(index);
-      }
+  const handleDescriptionChange = (value: string) => {
+    setDescription(value);
+    const pack = getPackCountFromDescription(value);
+    if (pack) {
+      setPiecesPerOuter(String(pack));
+      setPiecesPerCarton(String(pack));
+    }
   };
 
   const handleImageFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -98,13 +54,9 @@ export const ProductForm: React.FC<ProductFormProps> = ({ initialProduct, onSave
       return;
     }
     
-    // Parse variations back to data structure
-    const validVariations: ProductVariation[] = variations
-        .map(v => ({
-            name: v.name.trim(),
-            options: v.options
-        }))
-        .filter(v => v.name !== '' && v.options.length > 0);
+    const packValue = packFromDescription;
+    const outerValue = packValue ?? Math.max(1, parseInt(piecesPerOuter, 10) || 1);
+    const cartonValue = packValue ?? Math.max(outerValue, parseInt(piecesPerCarton, 10) || 1);
 
     onSave({
       name,
@@ -112,8 +64,10 @@ export const ProductForm: React.FC<ProductFormProps> = ({ initialProduct, onSave
       category,
       price: parseFloat(price) || 0,
       stock: parseInt(stock, 10) || 0,
+      packagingUnit,
+      piecesPerOuter: outerValue,
+      piecesPerCarton: cartonValue,
       imageUrl: imageUrl.trim() || undefined,
-      variations: validVariations.length > 0 ? validVariations : undefined,
     });
   };
 
@@ -140,9 +94,19 @@ export const ProductForm: React.FC<ProductFormProps> = ({ initialProduct, onSave
             id="description"
             rows={3}
             value={description}
-            onChange={(e) => setDescription(e.target.value)}
+            onChange={(e) => handleDescriptionChange(e.target.value)}
+            placeholder="e.g. 5sx40x41.3 — x40 means 40 pieces per outer/carton"
             className="block w-full px-3 py-2 mt-1 text-gray-900 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-yellow-500 focus:border-yellow-500 sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white"
           />
+          {packFromDescription ? (
+            <p className="mt-1 text-xs text-yellow-700 dark:text-yellow-400">
+              Pack size from description: {packFromDescription} pieces per outer/carton
+            </p>
+          ) : (
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              Add pack size in the description (e.g. 5sx40x41.3 or 50mlx6) or set it below.
+            </p>
+          )}
         </div>
         <div>
           <label htmlFor="imageUrl" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Product Image</label>
@@ -212,84 +176,50 @@ export const ProductForm: React.FC<ProductFormProps> = ({ initialProduct, onSave
             />
           </div>
         </div>
-
-        <div className="border-t border-gray-200 pt-4 dark:border-gray-700">
-            <div className="flex justify-between items-center mb-4">
-                <h3 className="text-lg font-medium text-gray-900 dark:text-white">Product Variations</h3>
-                <button
-                    type="button"
-                    onClick={handleAddVariation}
-                    className="text-sm font-bold text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
-                >
-                    + Add Variation
-                </button>
-            </div>
-            
-            {variations.length === 0 && (
-                <p className="text-sm text-gray-500 dark:text-gray-400 italic">No variations added yet (e.g. Size, Color).</p>
-            )}
-
-            <div className="space-y-4">
-                {variations.map((variation, index) => (
-                    <div key={index} className="flex flex-col md:flex-row items-start gap-4 p-4 bg-gray-50 border border-gray-200 rounded-md dark:bg-gray-700/30 dark:border-gray-600">
-                        <div className="w-full md:w-1/3">
-                            <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Variation Name</label>
-                            <input
-                                type="text"
-                                placeholder="e.g. Size"
-                                value={variation.name}
-                                onChange={(e) => handleVariationNameChange(index, e.target.value)}
-                                className="block w-full px-3 py-2 text-sm border-gray-300 rounded-md shadow-sm focus:ring-yellow-500 focus:border-yellow-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-                            />
-                        </div>
-                        <div className="flex-1 w-full">
-                            <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Options</label>
-                            <div className="flex flex-wrap gap-2 mb-2 min-h-[1.5rem]">
-                                {variation.options.length > 0 ? variation.options.map((option, optIndex) => (
-                                    <span key={optIndex} className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 border border-blue-200 dark:border-blue-800">
-                                        {option}
-                                        <button
-                                            type="button"
-                                            onClick={() => handleRemoveOption(index, optIndex)}
-                                            className="ml-1.5 text-blue-500 hover:text-blue-700 dark:text-blue-300 dark:hover:text-blue-100 focus:outline-none"
-                                        >
-                                            &times;
-                                        </button>
-                                    </span>
-                                )) : (
-                                    <span className="text-xs text-gray-400 dark:text-gray-500 py-1">No options added.</span>
-                                )}
-                            </div>
-                            <div className="flex gap-2">
-                                <input
-                                    type="text"
-                                    placeholder="Add option (e.g. Red) & Enter"
-                                    value={variation.currentOptionInput}
-                                    onChange={(e) => handleOptionInputChange(index, e.target.value)}
-                                    onKeyDown={(e) => handleKeyDownOption(index, e)}
-                                    className="block flex-1 px-3 py-2 text-sm border-gray-300 rounded-md shadow-sm focus:ring-yellow-500 focus:border-yellow-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-                                />
-                                <button
-                                    type="button"
-                                    onClick={() => handleAddOption(index)}
-                                    disabled={!variation.currentOptionInput.trim()}
-                                    className="px-3 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed dark:bg-blue-700 dark:hover:bg-blue-600"
-                                >
-                                    Add
-                                </button>
-                            </div>
-                        </div>
-                        <button
-                            type="button"
-                            onClick={() => handleRemoveVariation(index)}
-                            className="mt-6 p-2 text-gray-400 hover:text-red-500 dark:text-gray-500 dark:hover:text-red-400 transition-colors"
-                            title="Remove Variation"
-                        >
-                            <TrashIcon className="w-5 h-5" />
-                        </button>
-                    </div>
-                ))}
-            </div>
+        <div className="grid grid-cols-1 gap-6 sm:grid-cols-3 border-t border-gray-200 pt-4 dark:border-gray-700">
+          <div>
+            <label htmlFor="packagingUnit" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Inventory Unit</label>
+            <select
+              id="packagingUnit"
+              value={packagingUnit}
+              onChange={(e) => setPackagingUnit(e.target.value as Product['packagingUnit'])}
+              className="block w-full px-3 py-2 mt-1 text-gray-900 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-yellow-500 focus:border-yellow-500 sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+            >
+              <option value="pieces">Pieces</option>
+              <option value="outers">Outers</option>
+              <option value="cartons">Cartons</option>
+            </select>
+          </div>
+          <div>
+            <label htmlFor="piecesPerOuter" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Pieces Per Outer</label>
+            <input
+              type="number"
+              id="piecesPerOuter"
+              min="1"
+              step="1"
+              value={packFromDescription ?? piecesPerOuter}
+              onChange={(e) => setPiecesPerOuter(e.target.value)}
+              readOnly={Boolean(packFromDescription)}
+              className="block w-full px-3 py-2 mt-1 text-gray-900 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-yellow-500 focus:border-yellow-500 sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white disabled:bg-gray-100 dark:disabled:bg-gray-600"
+            />
+          </div>
+          <div>
+            <label htmlFor="piecesPerCarton" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Pieces Per Carton</label>
+            <input
+              type="number"
+              id="piecesPerCarton"
+              min="1"
+              step="1"
+              value={packFromDescription ?? piecesPerCarton}
+              onChange={(e) => setPiecesPerCarton(e.target.value)}
+              readOnly={Boolean(packFromDescription)}
+              className="block w-full px-3 py-2 mt-1 text-gray-900 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-yellow-500 focus:border-yellow-500 sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white disabled:bg-gray-100 dark:disabled:bg-gray-600"
+            />
+          </div>
+          <p className="sm:col-span-3 text-xs text-gray-500 dark:text-gray-400">
+            Products with the same description share stock. For orders in pieces, outers, and cartons, add one row per unit
+            (same description, different Inventory Unit and price). Example: 400 pieces at 5sx40x41.3 = 10 cartons.
+          </p>
         </div>
 
         <div className="flex justify-end space-x-3 pt-4">

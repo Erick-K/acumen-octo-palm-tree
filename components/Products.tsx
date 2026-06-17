@@ -6,6 +6,7 @@ import { ProductForm } from './ProductForm';
 import { StockChart } from './StockChart';
 import { importProductsExcel, exportProductsExcel, downloadExcel } from '../lib/excelApi';
 import { formatKes } from '../lib/formatCurrency';
+import { getPiecesPerCarton, getPiecesPerOuter } from '../lib/productPackaging';
 
 interface ProductsProps {
   products: Product[];
@@ -156,6 +157,7 @@ export const Products: React.FC<ProductsProps> = ({ products, onUpdateProduct, o
   useEffect(() => {
     try {
       localStorage.setItem('lowStockThreshold', String(lowStockThreshold));
+      window.dispatchEvent(new CustomEvent('acumen:lowStockThresholdChanged'));
     } catch (error) {
       console.error("Failed to save low stock threshold to localStorage", error);
     }
@@ -187,10 +189,6 @@ export const Products: React.FC<ProductsProps> = ({ products, onUpdateProduct, o
 
     return tempProducts;
   }, [products, searchTerm, categoryFilter, priceSort]);
-  
-  const lowStockProducts = useMemo(() => {
-    return products.filter(p => p.stock <= lowStockThreshold);
-  }, [products, lowStockThreshold]);
 
   const handleSaveProduct = (productData: Omit<Product, 'id'>) => {
     if (editingProduct) {
@@ -424,29 +422,6 @@ export const Products: React.FC<ProductsProps> = ({ products, onUpdateProduct, o
         </div>
       )}
 
-      {lowStockProducts.length > 0 && (
-        <div className="mt-4 p-4 border rounded-lg bg-yellow-50 border-yellow-300 dark:bg-yellow-900/30 dark:border-yellow-700">
-          <div className="flex">
-            <div className="flex-shrink-0">
-              <WarningIcon className="w-5 h-5 text-yellow-500 dark:text-yellow-400" />
-            </div>
-            <div className="ml-3">
-              <h3 className="text-sm font-medium text-yellow-800 dark:text-yellow-200">Low Stock Alert</h3>
-              <div className="mt-2 text-sm text-yellow-700 dark:text-yellow-300">
-                <p>
-                  The following products are at or below the threshold of {lowStockThreshold} units:
-                </p>
-                <ul role="list" className="mt-2 pl-5 space-y-1 list-disc">
-                  {lowStockProducts.map(p => (
-                    <li key={p.id}>{p.name} <span className="font-semibold">({p.stock} units)</span></li>
-                  ))}
-                </ul>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
       <div className="flex flex-wrap items-end gap-4 mt-4">
         <div className="flex-1 min-w-[200px]">
             <label htmlFor="product-search" className="text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 block">Search</label>
@@ -534,15 +509,17 @@ export const Products: React.FC<ProductsProps> = ({ products, onUpdateProduct, o
                             <td className="px-6 py-4">
                                 <div className="text-sm font-medium text-gray-900 dark:text-white">{product.name}</div>
                                 <div className="text-sm text-gray-500 dark:text-gray-400">{product.description}</div>
-                                {product.variations && product.variations.length > 0 && (
-                                    <div className="mt-2 flex flex-wrap gap-1">
-                                        {product.variations.map((v, idx) => (
-                                            <span key={idx} className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300">
-                                                {v.name}: {v.options.join(', ')}
-                                            </span>
-                                        ))}
-                                    </div>
-                                )}
+                                <div className="mt-2 flex flex-wrap gap-1">
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300">
+                                        Unit: {product.packagingUnit || 'pieces'}
+                                    </span>
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300">
+                                        1 outer = {getPiecesPerOuter(product)} pcs
+                                    </span>
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300">
+                                        1 carton = {getPiecesPerCarton(product)} pcs
+                                    </span>
+                                </div>
                             </td>
                             <td className="px-6 py-4 text-sm text-gray-500 whitespace-nowrap dark:text-gray-400">{product.category}</td>
                             <td className="px-6 py-4 text-sm text-gray-500 whitespace-nowrap dark:text-gray-400">{formatKes(product.price)}</td>

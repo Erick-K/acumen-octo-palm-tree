@@ -2,8 +2,7 @@
 import React, { useState } from 'react';
 import type { Client, User } from '../types';
 import { KENYAN_ADDRESS_SUGGESTIONS } from '../data/kenyanLocations';
-
-const KRA_PIN_REGEX = /^[A-Z]\d{9}[A-Z]$/;
+import { isValidKraPin, normalizeKraPin } from '../lib/kraPin';
 
 interface ClientFormProps {
   onAddClient: (newClient: Omit<Client, 'id' | 'location' | 'visits'> & { address: string, companyPin?: string }) => void;
@@ -20,9 +19,15 @@ export const ClientForm: React.FC<ClientFormProps> = ({ onAddClient, onCancel, s
   const [phone, setPhone] = useState('');
   const [address, setAddress] = useState('');
   const [companyPin, setCompanyPin] = useState('');
+  const [pinNotAvailable, setPinNotAvailable] = useState(false);
   const [isSupplier, setIsSupplier] = useState(false);
   const [supplierCategory, setSupplierCategory] = useState('');
   const [salesRepId, setSalesRepId] = useState<number>(currentUserId);
+
+  const handlePinAvailabilityChange = (checked: boolean) => {
+    setPinNotAvailable(checked);
+    if (checked) setCompanyPin('');
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -30,11 +35,13 @@ export const ClientForm: React.FC<ClientFormProps> = ({ onAddClient, onCancel, s
       alert('Company name, contact name, and address are required.');
       return;
     }
-    const normalizedCompanyPin = companyPin.trim().toUpperCase();
-    if (normalizedCompanyPin && !KRA_PIN_REGEX.test(normalizedCompanyPin)) {
+
+    const normalizedCompanyPin = normalizeKraPin(companyPin);
+    if (!pinNotAvailable && normalizedCompanyPin && !isValidKraPin(normalizedCompanyPin)) {
       alert('Company PIN must be 1 letter, 9 numbers, and 1 final letter (example: P051188806D).');
       return;
     }
+
     onAddClient({
       company,
       name,
@@ -42,7 +49,8 @@ export const ClientForm: React.FC<ClientFormProps> = ({ onAddClient, onCancel, s
       email: email.trim() || undefined,
       phone: phone.trim() || undefined,
       address,
-      companyPin: normalizedCompanyPin || undefined,
+      companyPin: pinNotAvailable ? undefined : normalizedCompanyPin || undefined,
+      pinNotAvailable: pinNotAvailable || undefined,
       isSupplier: isSupplier || undefined,
       supplierCategory: isSupplier ? (supplierCategory.trim() || undefined) : undefined,
     });
@@ -69,19 +77,35 @@ export const ClientForm: React.FC<ClientFormProps> = ({ onAddClient, onCancel, s
               <label htmlFor="phone" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Phone</label>
               <input type="tel" id="phone" value={phone} onChange={(e) => setPhone(e.target.value)} className="input-field" />
             </div>
-            <div>
-              <label htmlFor="companyPin" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Company PIN (Optional)</label>
-              <input 
-                type="text" 
-                id="companyPin" 
-                value={companyPin} 
-                onChange={(e) => setCompanyPin(e.target.value.toUpperCase())} 
-                className="input-field" 
-                placeholder="e.g. P051188806D"
-                maxLength={11}
-              />
-              <p className="mt-1 text-xs text-gray-500">KRA PIN format: 1 letter, 9 digits, then 1 letter (example: P051188806D).</p>
+            <div className="sm:col-span-2">
+              <label className="flex items-center space-x-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={pinNotAvailable}
+                  onChange={(e) => handlePinAvailabilityChange(e.target.checked)}
+                  className="w-4 h-4 text-yellow-600 border-gray-300 rounded focus:ring-yellow-500 dark:bg-gray-700 dark:border-gray-600"
+                />
+                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Client has no KRA PIN</span>
+              </label>
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                Check this to save the client and place orders without a company PIN.
+              </p>
             </div>
+            {!pinNotAvailable && (
+              <div className="sm:col-span-2">
+                <label htmlFor="companyPin" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Company PIN (Optional)</label>
+                <input
+                  type="text"
+                  id="companyPin"
+                  value={companyPin}
+                  onChange={(e) => setCompanyPin(e.target.value.toUpperCase())}
+                  className="input-field"
+                  placeholder="e.g. P051188806D"
+                  maxLength={11}
+                />
+                <p className="mt-1 text-xs text-gray-500">KRA PIN format: 1 letter, 9 digits, then 1 letter (example: P051188806D).</p>
+              </div>
+            )}
             <div className="sm:col-span-2">
               <label className="flex items-center space-x-2 cursor-pointer">
                 <input

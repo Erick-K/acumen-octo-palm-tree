@@ -14,7 +14,13 @@ import { Clients } from './components/Clients';
 import { Tasks } from './components/Tasks';
 import { UserProfile } from './components/UserProfile';
 import { Header } from './components/Header';
+import { LowStockNotification } from './components/LowStockNotification';
 import { UserManagement } from './components/UserManagement';
+import {
+  alignProductsByDescription,
+  getPiecesPerCarton,
+  getPiecesPerOuter,
+} from './lib/productPackaging';
 
 const pageTitles: { [key in Page]: string } = {
     [Page.Dashboard]: 'Dashboard',
@@ -109,10 +115,11 @@ const App: React.FC = () => {
   const [products, setProducts] = useState<Product[]>(() => {
     try {
       const savedProducts = localStorage.getItem('products');
-      return savedProducts ? JSON.parse(savedProducts) : (useMockSeedData ? MOCK_PRODUCTS : []);
+      const parsed: Product[] = savedProducts ? JSON.parse(savedProducts) : (useMockSeedData ? MOCK_PRODUCTS : []);
+      return alignProductsByDescription(parsed);
     } catch (error) {
       console.error("Failed to parse products from localStorage", error);
-      return useMockSeedData ? MOCK_PRODUCTS : [];
+      return alignProductsByDescription(useMockSeedData ? MOCK_PRODUCTS : []);
     }
   });
   const [orders, setOrders] = useState<Order[]>(() => {
@@ -159,7 +166,7 @@ const App: React.FC = () => {
     setBranding(data.branding || DEFAULT_APP_BRANDING);
     setUsers(data.users);
     setClients(data.clients);
-    setProducts(data.products);
+    setProducts(alignProductsByDescription(data.products));
     setOrders(data.orders);
     setTasks(data.tasks);
     setClockLogs(data.clockLogs);
@@ -360,7 +367,7 @@ const App: React.FC = () => {
       try {
         const nextProducts = JSON.parse(event.newValue);
         if (Array.isArray(nextProducts)) {
-          setProducts(nextProducts);
+          setProducts(alignProductsByDescription(nextProducts));
         }
       } catch (error) {
         console.error("Failed to sync products from localStorage", error);
@@ -557,14 +564,25 @@ const App: React.FC = () => {
     setOrders(prevOrders => [newOrder, ...prevOrders]);
 
     setProducts(prevProducts => {
-      const updatedProducts = [...prevProducts];
+      const updatedProducts = prevProducts.map(product => ({ ...product }));
+      const affectedProductIds = new Set<number>();
+
       newOrder.items.forEach(item => {
         const productIndex = updatedProducts.findIndex(p => p.id === item.productId);
         if (productIndex !== -1) {
-          updatedProducts[productIndex].stock -= item.quantity;
+          updatedProducts[productIndex] = {
+            ...updatedProducts[productIndex],
+            stock: updatedProducts[productIndex].stock - item.quantity,
+          };
+          affectedProductIds.add(item.productId);
         }
       });
-      return updatedProducts;
+
+      let alignedProducts = updatedProducts;
+      affectedProductIds.forEach(productId => {
+        alignedProducts = alignProductsByDescription(alignedProducts, productId);
+      });
+      return alignedProducts;
     });
 
     return newOrder;
@@ -576,15 +594,29 @@ const App: React.FC = () => {
 
     setProducts(currentProducts => {
         const productsMap = new Map<number, Product>(currentProducts.map(p => [p.id, p]));
+        const affectedProductIds = new Set<number>();
+
         originalOrder.items.forEach(item => {
             const p = productsMap.get(item.productId);
-            if (p) productsMap.set(p.id, { ...p, stock: p.stock + item.quantity });
+            if (p) {
+              productsMap.set(p.id, { ...p, stock: p.stock + item.quantity });
+              affectedProductIds.add(item.productId);
+            }
         });
         updatedOrder.items.forEach(item => {
              const p = productsMap.get(item.productId);
-             if (p) productsMap.set(p.id, { ...p, stock: p.stock - item.quantity });
+             if (p) {
+               productsMap.set(p.id, { ...p, stock: p.stock - item.quantity });
+               affectedProductIds.add(item.productId);
+             }
         });
-        return Array.from(productsMap.values()).sort((a, b) => a.id - b.id);
+
+        let alignedProducts = Array.from(productsMap.values());
+        affectedProductIds.forEach(productId => {
+          alignedProducts = alignProductsByDescription(alignedProducts, productId);
+        });
+
+        return alignedProducts.sort((a, b) => a.id - b.id);
     });
 
     setOrders(prevOrders => prevOrders.map(o => o.id === updatedOrder.id ? updatedOrder : o));
@@ -655,17 +687,33 @@ const App: React.FC = () => {
     };
 
   const handleAddProduct = (newProductData: Omit<Product, 'id'>) => {
+    const draft: Product = {
+      ...newProductData,
+      id: -1,
+      packagingUnit: newProductData.packagingUnit || 'pieces',
+      piecesPerOuter: getPiecesPerOuter({ ...newProductData, id: -1 } as Product),
+      piecesPerCarton: getPiecesPerCarton({ ...newProductData, id: -1 } as Product),
+    };
     const newProduct: Product = {
-        ...newProductData,
+        ...draft,
         id: products.length > 0 ? Math.max(...products.map(p => p.id)) + 1 : 1,
     };
-    setProducts(prevProducts => [newProduct, ...prevProducts]);
+    setProducts(prevProducts => alignProductsByDescription([newProduct, ...prevProducts], newProduct.id));
   };
 
   const handleUpdateProduct = (updatedProduct: Product) => {
-    setProducts(prevProducts => 
-      prevProducts.map(p => p.id === updatedProduct.id ? updatedProduct : p)
-    );
+    setProducts(prevProducts => {
+      const normalizedUpdated: Product = {
+        ...updatedProduct,
+        packagingUnit: updatedProduct.packagingUnit || 'pieces',
+        piecesPerOuter: getPiecesPerOuter(updatedProduct),
+        piecesPerCarton: getPiecesPerCarton(updatedProduct),
+      };
+      const nextProducts = prevProducts.map(product =>
+        product.id === normalizedUpdated.id ? normalizedUpdated : product
+      );
+      return alignProductsByDescription(nextProducts, normalizedUpdated.id);
+    });
   };
 
   const handleImportProducts = (importedProducts: Product[]) => {
@@ -690,12 +738,13 @@ const App: React.FC = () => {
         }
       });
       const importedIds = new Set(normalizedImportedProducts.map(p => p.id));
-      return Array.from(productsMap.values()).sort((a, b) => {
+      const mergedProducts = Array.from(productsMap.values()).sort((a, b) => {
         const aImported = importedIds.has(a.id);
         const bImported = importedIds.has(b.id);
         if (aImported !== bImported) return aImported ? -1 : 1;
         return b.id - a.id;
       });
+      return alignProductsByDescription(mergedProducts);
     });
   };
 
@@ -867,6 +916,10 @@ const App: React.FC = () => {
           {renderPage()}
         </div>
       </main>
+      <LowStockNotification
+        products={products}
+        enabled={currentUser.preferences?.notificationsEnabled !== false}
+      />
       {isSidebarOpen && <div onClick={() => setSidebarOpen(false)} className="fixed inset-0 z-30 bg-black bg-opacity-50 lg:hidden"></div>}
     </div>
   );
