@@ -130,6 +130,30 @@ function mergeByUserId(localItems: LiveLocation[], sharedItems: LiveLocation[]):
   return Array.from(merged.values());
 }
 
+/** Honour local deletions when local catalogue is a smaller subset of shared. */
+export function mergeProducts(localProducts: Product[], sharedProducts: Product[]): Product[] {
+  if (localProducts.length === 0) return sharedProducts;
+  if (sharedProducts.length === 0) return localProducts;
+
+  const merged = new Map<number, Product>();
+  sharedProducts.forEach(product => merged.set(product.id, product));
+  localProducts.forEach(product => merged.set(product.id, product));
+
+  const localIds = new Set(localProducts.map(product => product.id));
+  const sharedIds = new Set(sharedProducts.map(product => product.id));
+  const sharedOnly = sharedProducts.filter(product => !localIds.has(product.id));
+  const localIsStrictSubset =
+    localProducts.length < sharedProducts.length &&
+    localProducts.every(product => sharedIds.has(product.id));
+
+  if (localIsStrictSubset && sharedOnly.length > 0) {
+    return localProducts.map(product => merged.get(product.id)!);
+  }
+
+  const allIds = new Set([...localIds, ...sharedIds]);
+  return Array.from(allIds).map(id => merged.get(id)!);
+}
+
 export function normalizeSharedAppData(data: Partial<SharedAppData>): SharedAppData {
   const resetVersion = typeof data.resetVersion === 'string' && data.resetVersion.trim().length > 0
     ? data.resetVersion.trim()
@@ -170,7 +194,7 @@ export function mergeSharedAppData(localData: SharedAppData, sharedData: SharedA
     branding: useLocalBranding ? localData.branding : sharedData.branding || localData.branding,
     users: mergeUsers(localData.users, sharedData.users),
     clients: mergeById(localData.clients, sharedData.clients),
-    products: mergeById(localData.products, sharedData.products),
+    products: mergeProducts(localData.products, sharedData.products),
     orders: mergeById(localData.orders, sharedData.orders),
     tasks: mergeById(localData.tasks, sharedData.tasks),
     clockLogs: mergeById(localData.clockLogs, sharedData.clockLogs),

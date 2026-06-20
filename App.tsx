@@ -35,6 +35,7 @@ const pageTitles: { [key in Page]: string } = {
 type ImportedClientData = Omit<Client, 'location' | 'visits'> & { address: string };
 const LOCAL_RESET_VERSION_KEY = 'appLocalResetVersion';
 const LOCAL_BRANDING_KEY = 'appBranding';
+const LOCAL_PRODUCTS_UPDATED_AT_KEY = 'productsUpdatedAt';
 const DEFAULT_APP_BRANDING: AppBranding = { appName: 'Acme Business Suite' };
 
 const isIsoTimestampNewer = (incoming: string | null, current: string | null) => {
@@ -44,8 +45,23 @@ const isIsoTimestampNewer = (incoming: string | null, current: string | null) =>
 };
 
 const clearDeviceCachedAppData = () => {
-  const keysToClear = ['users', 'clients', 'products', 'orders', 'tasks', 'clockLogs', 'liveLocations'];
+  const keysToClear = ['users', 'clients', 'products', 'orders', 'tasks', 'clockLogs', 'liveLocations', LOCAL_PRODUCTS_UPDATED_AT_KEY];
   keysToClear.forEach(key => localStorage.removeItem(key));
+};
+
+const readLocalProducts = (): Product[] => {
+  try {
+    const savedProducts = localStorage.getItem('products');
+    const parsed = savedProducts ? JSON.parse(savedProducts) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+};
+
+const shouldPreferLocalProducts = (sharedUpdatedAt: string | null) => {
+  const localProductsAt = localStorage.getItem(LOCAL_PRODUCTS_UPDATED_AT_KEY);
+  return Boolean(localProductsAt && isIsoTimestampNewer(localProductsAt, sharedUpdatedAt));
 };
 
 const App: React.FC = () => {
@@ -199,6 +215,7 @@ const App: React.FC = () => {
       localStorage.setItem('users', JSON.stringify(users));
       localStorage.setItem('clients', JSON.stringify(clients));
       localStorage.setItem('products', JSON.stringify(products));
+      localStorage.setItem(LOCAL_PRODUCTS_UPDATED_AT_KEY, new Date().toISOString());
       localStorage.setItem('orders', JSON.stringify(orders));
       localStorage.setItem('tasks', JSON.stringify(tasks));
       localStorage.setItem('clockLogs', JSON.stringify(clockLogs));
@@ -242,12 +259,15 @@ const App: React.FC = () => {
           return;
         }
 
-        applySharedData(
-          mergeSharedAppData(
-            { ...sharedDataRef.current, resetVersion: localResetVersion },
-            payload.data
-          )
+        const localProducts = readLocalProducts();
+        const merged = mergeSharedAppData(
+          { ...sharedDataRef.current, resetVersion: localResetVersion, products: localProducts },
+          payload.data
         );
+        if (shouldPreferLocalProducts(payload.updatedAt)) {
+          merged.products = localProducts;
+        }
+        applySharedData(merged);
       })
       .catch(error => {
         console.warn('Shared app data is unavailable; using local device data.', error);
@@ -289,7 +309,15 @@ const App: React.FC = () => {
           if (!payload?.data || !payload.updatedAt) return;
           if (!isIsoTimestampNewer(payload.updatedAt, lastSharedUpdatedAtRef.current)) return;
           lastSharedUpdatedAtRef.current = payload.updatedAt;
-          applySharedData(mergeSharedAppData(sharedDataRef.current, payload.data));
+          const localProducts = readLocalProducts();
+          const merged = mergeSharedAppData(
+            { ...sharedDataRef.current, products: localProducts },
+            payload.data
+          );
+          if (shouldPreferLocalProducts(payload.updatedAt)) {
+            merged.products = localProducts;
+          }
+          applySharedData(merged);
         })
         .catch(() => {
           // Keep the app usable offline or when the Netlify function is unavailable.
@@ -753,9 +781,16 @@ const App: React.FC = () => {
   };
 
   const handleDeleteProduct = (productId: number) => {
+    const deletedAt = new Date().toISOString();
     const nextProducts = products.filter(product => product.id !== productId);
+
+    lastSharedUpdatedAtRef.current = deletedAt;
+    localStorage.setItem('products', JSON.stringify(nextProducts));
+    localStorage.setItem(LOCAL_PRODUCTS_UPDATED_AT_KEY, deletedAt);
+    sharedDataRef.current = { ...sharedDataRef.current, products: nextProducts };
+
     setProducts(nextProducts);
-    persistSharedSnapshot({ products: nextProducts });
+    void persistSharedSnapshot({ products: nextProducts });
   };
 
   const handleAddTask = (newTaskData: Omit<Task, 'id' | 'status'>) => {

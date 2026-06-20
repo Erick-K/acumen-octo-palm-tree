@@ -54,9 +54,11 @@ export const OrderForm: React.FC<OrderFormProps> = ({ clients, products, salesRe
     [products, productToAdd]
   );
 
-  const resolvedProduct = useMemo(() => {
+  const activeProduct = useMemo(() => {
     if (!referenceProduct) return undefined;
-    return findProductForPackagingUnit(products, referenceProduct, orderUnit);
+    return (
+      findProductForPackagingUnit(products, referenceProduct, orderUnit) ?? referenceProduct
+    );
   }, [products, referenceProduct, orderUnit]);
 
   const availableUnits = useMemo(() => {
@@ -76,40 +78,40 @@ export const OrderForm: React.FC<OrderFormProps> = ({ clients, products, salesRe
 
   useEffect(() => {
     if (!referenceProduct) return;
-    const defaultUnit = (referenceProduct.packagingUnit || 'pieces') as PackagingUnit;
-    if (availableUnits.includes(defaultUnit)) {
-      setOrderUnit(defaultUnit);
-      return;
+    setOrderUnit((referenceProduct.packagingUnit || 'pieces') as PackagingUnit);
+  }, [productToAdd]);
+
+  const handleUnitChange = (unit: PackagingUnit) => {
+    if (!referenceProduct) return;
+    setOrderUnit(unit);
+    const match = findProductForPackagingUnit(products, referenceProduct, unit);
+    if (match) setProductToAdd(match.id);
+  };
+
+  const handleProductSelect = (productId: number | '') => {
+    setProductToAdd(productId);
+    if (!productId) return;
+    const product = products.find(p => p.id === productId);
+    if (product) {
+      setOrderUnit((product.packagingUnit || 'pieces') as PackagingUnit);
     }
-    if (availableUnits.length > 0) {
-      setOrderUnit(availableUnits[0]);
-    }
-  }, [referenceProduct?.id, availableUnits, referenceProduct]);
+  };
 
   const handleAddItem = () => {
-    if (!productToAdd || quantity <= 0 || !referenceProduct) return;
+    if (!productToAdd || quantity <= 0 || !activeProduct) return;
 
-    const product = findProductForPackagingUnit(products, referenceProduct, orderUnit);
-    if (!product) {
-      alert(
-        `No ${PACKAGING_UNIT_LABELS[orderUnit].toLowerCase()} product exists for this description.\n\n` +
-        'On the Products page, add another row with the same description and Inventory Unit set to ' +
-        `${PACKAGING_UNIT_LABELS[orderUnit]}.`
-      );
-      return;
-    }
-
-    const orderableStock = getOrderableStockForUnit(products, referenceProduct, orderUnit);
+    const product = activeProduct;
+    const unit = (product.packagingUnit || 'pieces') as PackagingUnit;
+    const orderableStock = getOrderableStockForUnit(products, product, unit);
     if (orderableStock <= 0) {
-      alert(`No ${PACKAGING_UNIT_LABELS[orderUnit].toLowerCase()} stock available for this product.`);
+      alert(`No ${PACKAGING_UNIT_LABELS[unit].toLowerCase()} stock available for this product.`);
       return;
     }
     if (quantity > orderableStock) {
-      alert(`Only ${orderableStock} ${PACKAGING_UNIT_LABELS[orderUnit].toLowerCase()} in stock.`);
+      alert(`Only ${orderableStock} ${PACKAGING_UNIT_LABELS[unit].toLowerCase()} in stock.`);
       return;
     }
 
-    const unit = (product.packagingUnit || 'pieces') as PackagingUnit;
     const existingItemIndex = items.findIndex(item => item.productId === product.id);
     if (existingItemIndex > -1) {
       const newItems = [...items];
@@ -147,7 +149,7 @@ export const OrderForm: React.FC<OrderFormProps> = ({ clients, products, salesRe
   };
 
   const selectableProducts = useMemo(() => {
-    return getOrderableProducts(products).filter(product => {
+    const filtered = getOrderableProducts(products).filter(product => {
       if (!normalizedProductSearch) return true;
       return (
         product.name.toLowerCase().includes(normalizedProductSearch) ||
@@ -156,7 +158,14 @@ export const OrderForm: React.FC<OrderFormProps> = ({ clients, products, salesRe
         (product.packagingUnit || 'pieces').includes(normalizedProductSearch)
       );
     });
-  }, [products, normalizedProductSearch]);
+
+    if (productToAdd && !filtered.some(product => product.id === productToAdd)) {
+      const selected = products.find(product => product.id === productToAdd);
+      if (selected) return [selected, ...filtered];
+    }
+
+    return filtered;
+  }, [products, normalizedProductSearch, productToAdd]);
 
   const formatProductOption = (product: Product) => {
     const unit = PACKAGING_UNIT_LABELS[product.packagingUnit || 'pieces'];
@@ -255,7 +264,7 @@ export const OrderForm: React.FC<OrderFormProps> = ({ clients, products, salesRe
               <select
                 id="product"
                 value={productToAdd}
-                onChange={(e) => setProductToAdd(e.target.value ? Number(e.target.value) : '')}
+                onChange={(e) => handleProductSelect(e.target.value ? Number(e.target.value) : '')}
                 className="block w-full px-3 py-2 mt-1 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-yellow-500 focus:border-yellow-500 sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white"
               >
                 <option value="" disabled>-- Select a product --</option>
@@ -278,7 +287,7 @@ export const OrderForm: React.FC<OrderFormProps> = ({ clients, products, salesRe
                       key={unit}
                       type="button"
                       disabled={!referenceProduct || !isConfigured || !isAvailable}
-                      onClick={() => setOrderUnit(unit)}
+                      onClick={() => handleUnitChange(unit)}
                       title={
                         !isConfigured
                           ? `Add a ${PACKAGING_UNIT_LABELS[unit].toLowerCase()} product row with the same description`
@@ -317,13 +326,25 @@ export const OrderForm: React.FC<OrderFormProps> = ({ clients, products, salesRe
               Add
             </button>
           </div>
-          {referenceProduct && resolvedProduct && (
-            <p className="mt-2 text-xs text-gray-600 dark:text-gray-300">
-              {PACKAGING_UNIT_LABELS[orderUnit]} price: <span className="font-semibold">{formatKes(resolvedProduct.price)}</span>
-              {' · '}
-              Stock: <span className="font-semibold">{getOrderableStockForUnit(products, referenceProduct, orderUnit)}</span>{' '}
-              {PACKAGING_UNIT_LABELS[orderUnit].toLowerCase()}
-            </p>
+          {activeProduct && (
+            <div className="mt-3 p-3 rounded-md bg-gray-50 border border-gray-200 dark:bg-gray-700/50 dark:border-gray-600">
+              <p className="text-sm font-semibold text-gray-900 dark:text-white">{activeProduct.name}</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">{getDisplayVariation(activeProduct)}</p>
+              <p className="mt-1 text-sm text-gray-700 dark:text-gray-300">
+                {PACKAGING_UNIT_LABELS[activeProduct.packagingUnit || 'pieces']}:{' '}
+                <span className="font-semibold">{formatKes(activeProduct.price)}</span>
+                {' · '}
+                Stock:{' '}
+                <span className="font-semibold">
+                  {getOrderableStockForUnit(
+                    products,
+                    activeProduct,
+                    (activeProduct.packagingUnit || 'pieces') as PackagingUnit
+                  )}
+                </span>{' '}
+                {PACKAGING_UNIT_LABELS[activeProduct.packagingUnit || 'pieces'].toLowerCase()}
+              </p>
+            </div>
           )}
           {referenceProduct && missingUnits.length > 0 && (
             <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">
@@ -331,7 +352,7 @@ export const OrderForm: React.FC<OrderFormProps> = ({ clients, products, salesRe
               Add matching product rows on the Products page to enable those units and prices.
             </p>
           )}
-          {referenceProduct && !resolvedProduct && (
+          {referenceProduct && !activeProduct && (
             <p className="mt-2 text-xs text-red-600 dark:text-red-400">
               No {PACKAGING_UNIT_LABELS[orderUnit].toLowerCase()} product row exists for this description.
             </p>
