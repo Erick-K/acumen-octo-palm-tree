@@ -1,13 +1,11 @@
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import type { Client, Product, Order, OrderItem } from '../types';
 import { formatKes } from '../lib/formatCurrency';
 import { clientHasNoPin } from '../lib/kraPin';
 import {
   findProductForPackagingUnit,
-  getAvailablePackagingUnits,
   getMissingPackagingUnits,
-  getOrderableProducts,
   getOrderableStockForUnit,
   getPackagingUnitsInGroup,
   PACKAGING_UNIT_LABELS,
@@ -37,8 +35,7 @@ export const OrderForm: React.FC<OrderFormProps> = ({ clients, products, salesRe
   const baseOrderData = initialOrder ?? initialDraftData;
   const [clientId, setClientId] = useState<number | ''>(baseOrderData?.clientId ?? '');
   const [items, setItems] = useState<OrderItem[]>(baseOrderData?.items ?? []);
-  const [productToAdd, setProductToAdd] = useState<number | ''>('');
-  const [orderUnit, setOrderUnit] = useState<PackagingUnit>('pieces');
+  const [selectedProductId, setSelectedProductId] = useState<number | ''>('');
   const [productSearchTerm, setProductSearchTerm] = useState('');
   const [quantity, setQuantity] = useState<number>(1);
   const [date, setDate] = useState(baseOrderData?.date || new Date().toISOString().split('T')[0]);
@@ -49,60 +46,34 @@ export const OrderForm: React.FC<OrderFormProps> = ({ clients, products, salesRe
     [clients, clientId]
   );
 
-  const referenceProduct = useMemo(
-    () => (productToAdd ? products.find(product => product.id === Number(productToAdd)) : undefined),
-    [products, productToAdd]
+  const selectedProduct = useMemo(
+    () => (selectedProductId ? products.find(product => product.id === Number(selectedProductId)) : undefined),
+    [products, selectedProductId]
   );
 
-  const activeProduct = useMemo(() => {
-    if (!referenceProduct) return undefined;
-    return (
-      findProductForPackagingUnit(products, referenceProduct, orderUnit) ?? referenceProduct
-    );
-  }, [products, referenceProduct, orderUnit]);
-
-  const availableUnits = useMemo(() => {
-    if (!referenceProduct) return [] as PackagingUnit[];
-    return getAvailablePackagingUnits(products, referenceProduct);
-  }, [products, referenceProduct]);
+  const selectedUnit = (selectedProduct?.packagingUnit || 'pieces') as PackagingUnit;
 
   const configuredUnits = useMemo(() => {
-    if (!referenceProduct) return [] as PackagingUnit[];
-    return getPackagingUnitsInGroup(products, referenceProduct);
-  }, [products, referenceProduct]);
+    if (!selectedProduct) return [] as PackagingUnit[];
+    return getPackagingUnitsInGroup(products, selectedProduct);
+  }, [products, selectedProduct]);
 
   const missingUnits = useMemo(() => {
-    if (!referenceProduct) return [] as PackagingUnit[];
-    return getMissingPackagingUnits(products, referenceProduct);
-  }, [products, referenceProduct]);
-
-  useEffect(() => {
-    if (!referenceProduct) return;
-    setOrderUnit((referenceProduct.packagingUnit || 'pieces') as PackagingUnit);
-  }, [productToAdd]);
+    if (!selectedProduct) return [] as PackagingUnit[];
+    return getMissingPackagingUnits(products, selectedProduct);
+  }, [products, selectedProduct]);
 
   const handleUnitChange = (unit: PackagingUnit) => {
-    if (!referenceProduct) return;
-    setOrderUnit(unit);
-    const match = findProductForPackagingUnit(products, referenceProduct, unit);
-    if (match) setProductToAdd(match.id);
-  };
-
-  const handleProductSelect = (productId: number | '') => {
-    setProductToAdd(productId);
-    if (!productId) return;
-    const product = products.find(p => p.id === productId);
-    if (product) {
-      setOrderUnit((product.packagingUnit || 'pieces') as PackagingUnit);
-    }
+    if (!selectedProduct) return;
+    const match = findProductForPackagingUnit(products, selectedProduct, unit);
+    if (match) setSelectedProductId(match.id);
   };
 
   const handleAddItem = () => {
-    if (!productToAdd || quantity <= 0 || !activeProduct) return;
+    if (!selectedProduct || quantity <= 0) return;
 
-    const product = activeProduct;
-    const unit = (product.packagingUnit || 'pieces') as PackagingUnit;
-    const orderableStock = getOrderableStockForUnit(products, product, unit);
+    const unit = selectedUnit;
+    const orderableStock = getOrderableStockForUnit(products, selectedProduct, unit);
     if (orderableStock <= 0) {
       alert(`No ${PACKAGING_UNIT_LABELS[unit].toLowerCase()} stock available for this product.`);
       return;
@@ -112,7 +83,7 @@ export const OrderForm: React.FC<OrderFormProps> = ({ clients, products, salesRe
       return;
     }
 
-    const existingItemIndex = items.findIndex(item => item.productId === product.id);
+    const existingItemIndex = items.findIndex(item => item.productId === selectedProduct.id);
     if (existingItemIndex > -1) {
       const newItems = [...items];
       newItems[existingItemIndex].quantity += quantity;
@@ -121,16 +92,15 @@ export const OrderForm: React.FC<OrderFormProps> = ({ clients, products, salesRe
       setItems([
         ...items,
         {
-          productId: product.id,
+          productId: selectedProduct.id,
           quantity,
-          priceAtSale: product.price,
+          priceAtSale: selectedProduct.price,
           packagingUnit: unit,
         },
       ]);
     }
-    setProductToAdd('');
+    setSelectedProductId('');
     setQuantity(1);
-    setOrderUnit('pieces');
   };
   
   const handleRemoveItem = (productId: number) => {
@@ -142,36 +112,30 @@ export const OrderForm: React.FC<OrderFormProps> = ({ clients, products, salesRe
   }, [items]);
 
   const normalizedProductSearch = productSearchTerm.trim().toLowerCase();
-  const getDisplayVariation = (product: Product) => {
-    const descriptionText = product.description?.trim();
-    if (descriptionText) return descriptionText;
-    return 'No variation';
-  };
 
   const selectableProducts = useMemo(() => {
-    const filtered = getOrderableProducts(products).filter(product => {
-      if (!normalizedProductSearch) return true;
-      return (
-        product.name.toLowerCase().includes(normalizedProductSearch) ||
-        product.category.toLowerCase().includes(normalizedProductSearch) ||
-        product.description.toLowerCase().includes(normalizedProductSearch) ||
-        (product.packagingUnit || 'pieces').includes(normalizedProductSearch)
-      );
-    });
-
-    if (productToAdd && !filtered.some(product => product.id === productToAdd)) {
-      const selected = products.find(product => product.id === productToAdd);
-      if (selected) return [selected, ...filtered];
-    }
-
-    return filtered;
-  }, [products, normalizedProductSearch, productToAdd]);
-
-  const formatProductOption = (product: Product) => {
-    const unit = PACKAGING_UNIT_LABELS[product.packagingUnit || 'pieces'];
-    const stock = getOrderableStockForUnit(products, product, (product.packagingUnit || 'pieces') as PackagingUnit);
-    return `${product.name} - ${getDisplayVariation(product)} [${unit}] | ${formatKes(product.price)} | Stock: ${stock}`;
-  };
+    return products
+      .filter(product => {
+        const unit = (product.packagingUnit || 'pieces') as PackagingUnit;
+        return getOrderableStockForUnit(products, product, unit) > 0;
+      })
+      .filter(product => {
+        if (!normalizedProductSearch) return true;
+        const unitLabel = PACKAGING_UNIT_LABELS[product.packagingUnit || 'pieces'].toLowerCase();
+        return (
+          product.name.toLowerCase().includes(normalizedProductSearch) ||
+          product.category.toLowerCase().includes(normalizedProductSearch) ||
+          product.description.toLowerCase().includes(normalizedProductSearch) ||
+          unitLabel.includes(normalizedProductSearch)
+        );
+      })
+      .sort((a, b) => {
+        const nameCompare = a.name.localeCompare(b.name);
+        if (nameCompare !== 0) return nameCompare;
+        const unitOrder: Record<PackagingUnit, number> = { pieces: 0, outers: 1, cartons: 2 };
+        return unitOrder[a.packagingUnit || 'pieces'] - unitOrder[b.packagingUnit || 'pieces'];
+      });
+  }, [products, normalizedProductSearch]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -243,10 +207,6 @@ export const OrderForm: React.FC<OrderFormProps> = ({ clients, products, salesRe
 
         <div className="p-4 border border-gray-200 rounded-lg dark:border-gray-600">
           <h3 className="mb-4 text-lg font-medium text-gray-900 dark:text-white">Add Products</h3>
-          <p className="mb-3 text-xs text-gray-500 dark:text-gray-400">
-            To sell in pieces, outers, and cartons with different prices, add separate product rows on the Products page
-            with the <span className="font-semibold">same description</span> but different Inventory Unit.
-          </p>
           <div className="mb-3">
             <label htmlFor="product-search" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Search Product</label>
             <input
@@ -258,108 +218,131 @@ export const OrderForm: React.FC<OrderFormProps> = ({ clients, products, salesRe
               className="block w-full px-3 py-2 mt-1 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-yellow-500 focus:border-yellow-500 sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white"
             />
           </div>
-          <div className="flex flex-wrap items-end gap-4">
-            <div className="flex-1 min-w-[220px]">
-              <label htmlFor="product" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Product</label>
-              <select
-                id="product"
-                value={productToAdd}
-                onChange={(e) => handleProductSelect(e.target.value ? Number(e.target.value) : '')}
-                className="block w-full px-3 py-2 mt-1 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-yellow-500 focus:border-yellow-500 sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-              >
-                <option value="" disabled>-- Select a product --</option>
-                {selectableProducts.map(product => (
-                  <option key={product.id} value={product.id}>
-                    {formatProductOption(product)}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Order In</label>
-              <div className="mt-1 flex flex-wrap gap-2">
-                {(['pieces', 'outers', 'cartons'] as PackagingUnit[]).map(unit => {
-                  const isConfigured = configuredUnits.includes(unit);
-                  const isAvailable = availableUnits.includes(unit);
-                  const isSelected = orderUnit === unit;
-                  return (
-                    <button
-                      key={unit}
-                      type="button"
-                      disabled={!referenceProduct || !isConfigured || !isAvailable}
-                      onClick={() => handleUnitChange(unit)}
-                      title={
-                        !isConfigured
-                          ? `Add a ${PACKAGING_UNIT_LABELS[unit].toLowerCase()} product row with the same description`
-                          : !isAvailable
-                            ? `No ${PACKAGING_UNIT_LABELS[unit].toLowerCase()} stock available`
-                            : undefined
-                      }
-                      className={`px-3 py-2 text-sm font-medium rounded-md border transition-colors ${
-                        isSelected
-                          ? 'bg-yellow-500 text-blue-900 border-yellow-500'
-                          : 'bg-white text-gray-700 border-gray-300 hover:bg-blue-50 dark:bg-gray-700 dark:text-gray-200 dark:border-gray-600 dark:hover:bg-gray-600'
-                      } disabled:opacity-40 disabled:cursor-not-allowed`}
-                    >
-                      {PACKAGING_UNIT_LABELS[unit]}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-            <div>
-              <label htmlFor="quantity" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Qty</label>
-              <input
-                type="number"
-                id="quantity"
-                min="1"
-                value={quantity}
-                onChange={(e) => setQuantity(Number(e.target.value))}
-                className="block w-24 px-3 py-2 mt-1 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-yellow-500 focus:border-yellow-500 sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-              />
-            </div>
-            <button
-              type="button"
-              onClick={handleAddItem}
-              className="px-4 py-2 font-bold text-blue-900 bg-yellow-500 border border-transparent rounded-md shadow-sm hover:bg-yellow-400 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-yellow-500"
-            >
-              Add
-            </button>
+
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Pick Product Row</label>
+          <p className="mt-1 mb-2 text-xs text-gray-500 dark:text-gray-400">
+            Each row is a separate inventory unit with its own price. Tap the exact row you want to order.
+          </p>
+          <div className="max-h-56 overflow-y-auto border border-gray-200 rounded-md divide-y divide-gray-200 dark:border-gray-600 dark:divide-gray-600">
+            {selectableProducts.length === 0 ? (
+              <p className="p-3 text-sm text-gray-500 dark:text-gray-400">No products match your search.</p>
+            ) : (
+              selectableProducts.map(product => {
+                const unit = (product.packagingUnit || 'pieces') as PackagingUnit;
+                const stock = getOrderableStockForUnit(products, product, unit);
+                const isSelected = selectedProductId === product.id;
+                return (
+                  <button
+                    key={product.id}
+                    type="button"
+                    onClick={() => setSelectedProductId(product.id)}
+                    className={`w-full text-left px-3 py-2 transition-colors ${
+                      isSelected
+                        ? 'bg-yellow-50 border-l-4 border-yellow-500 dark:bg-yellow-900/20'
+                        : 'hover:bg-gray-50 dark:hover:bg-gray-700/50 border-l-4 border-transparent'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">{product.name}</p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{product.description || 'No description'}</p>
+                      </div>
+                      <div className="text-right flex-shrink-0">
+                        <p className="text-xs font-bold text-yellow-700 dark:text-yellow-300">{PACKAGING_UNIT_LABELS[unit]}</p>
+                        <p className="text-sm font-semibold text-gray-900 dark:text-white">{formatKes(product.price)}</p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400">Stock: {stock}</p>
+                      </div>
+                    </div>
+                  </button>
+                );
+              })
+            )}
           </div>
-          {activeProduct && (
+
+          {selectedProduct && (
+            <div className="mt-3 flex flex-wrap items-end gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Switch Unit</label>
+                <div className="mt-1 flex flex-wrap gap-2">
+                  {(['pieces', 'outers', 'cartons'] as PackagingUnit[]).map(unit => {
+                    const isConfigured = configuredUnits.includes(unit);
+                    const isSelected = selectedUnit === unit;
+                    const unitProduct = selectedProduct
+                      ? findProductForPackagingUnit(products, selectedProduct, unit)
+                      : undefined;
+                    const unitStock = unitProduct
+                      ? getOrderableStockForUnit(products, unitProduct, unit)
+                      : 0;
+                    return (
+                      <button
+                        key={unit}
+                        type="button"
+                        disabled={!isConfigured || unitStock <= 0}
+                        onClick={() => handleUnitChange(unit)}
+                        title={
+                          !isConfigured
+                            ? `No ${PACKAGING_UNIT_LABELS[unit].toLowerCase()} row for this product`
+                            : unitStock <= 0
+                              ? `No ${PACKAGING_UNIT_LABELS[unit].toLowerCase()} stock`
+                              : unitProduct
+                                ? `${formatKes(unitProduct.price)} per ${PACKAGING_UNIT_LABELS[unit].toLowerCase()}`
+                                : undefined
+                        }
+                        className={`px-3 py-2 text-sm font-medium rounded-md border transition-colors ${
+                          isSelected
+                            ? 'bg-yellow-500 text-blue-900 border-yellow-500'
+                            : 'bg-white text-gray-700 border-gray-300 hover:bg-blue-50 dark:bg-gray-700 dark:text-gray-200 dark:border-gray-600 dark:hover:bg-gray-600'
+                        } disabled:opacity-40 disabled:cursor-not-allowed`}
+                      >
+                        {PACKAGING_UNIT_LABELS[unit]}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              <div>
+                <label htmlFor="quantity" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Qty</label>
+                <input
+                  type="number"
+                  id="quantity"
+                  min="1"
+                  value={quantity}
+                  onChange={(e) => setQuantity(Number(e.target.value))}
+                  className="block w-24 px-3 py-2 mt-1 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-yellow-500 focus:border-yellow-500 sm:text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={handleAddItem}
+                className="px-4 py-2 font-bold text-blue-900 bg-yellow-500 border border-transparent rounded-md shadow-sm hover:bg-yellow-400 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-yellow-500"
+              >
+                Add
+              </button>
+            </div>
+          )}
+
+          {selectedProduct && (
             <div className="mt-3 p-3 rounded-md bg-gray-50 border border-gray-200 dark:bg-gray-700/50 dark:border-gray-600">
-              <p className="text-sm font-semibold text-gray-900 dark:text-white">{activeProduct.name}</p>
-              <p className="text-xs text-gray-500 dark:text-gray-400">{getDisplayVariation(activeProduct)}</p>
+              <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Selected for order</p>
+              <p className="text-sm font-semibold text-gray-900 dark:text-white">{selectedProduct.name}</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">{selectedProduct.description || 'No description'}</p>
               <p className="mt-1 text-sm text-gray-700 dark:text-gray-300">
-                {PACKAGING_UNIT_LABELS[activeProduct.packagingUnit || 'pieces']}:{' '}
-                <span className="font-semibold">{formatKes(activeProduct.price)}</span>
+                {PACKAGING_UNIT_LABELS[selectedUnit]}:{' '}
+                <span className="font-semibold">{formatKes(selectedProduct.price)}</span>
                 {' · '}
                 Stock:{' '}
                 <span className="font-semibold">
-                  {getOrderableStockForUnit(
-                    products,
-                    activeProduct,
-                    (activeProduct.packagingUnit || 'pieces') as PackagingUnit
-                  )}
+                  {getOrderableStockForUnit(products, selectedProduct, selectedUnit)}
                 </span>{' '}
-                {PACKAGING_UNIT_LABELS[activeProduct.packagingUnit || 'pieces'].toLowerCase()}
+                {PACKAGING_UNIT_LABELS[selectedUnit].toLowerCase()}
               </p>
             </div>
           )}
-          {referenceProduct && missingUnits.length > 0 && (
+
+          {selectedProduct && missingUnits.length > 0 && (
             <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">
               Not set up yet: {missingUnits.map(unit => PACKAGING_UNIT_LABELS[unit].toLowerCase()).join(', ')}.
-              Add matching product rows on the Products page to enable those units and prices.
-            </p>
-          )}
-          {referenceProduct && !activeProduct && (
-            <p className="mt-2 text-xs text-red-600 dark:text-red-400">
-              No {PACKAGING_UNIT_LABELS[orderUnit].toLowerCase()} product row exists for this description.
-            </p>
-          )}
-          {selectableProducts.length === 0 && (
-            <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-              No products match your search. Try another keyword.
+              Add matching product rows on the Products page with the same name and description.
             </p>
           )}
         </div>

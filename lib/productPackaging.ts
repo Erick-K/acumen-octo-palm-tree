@@ -61,7 +61,9 @@ export function normalizeProductDescriptionKey(description?: string) {
 
 export function getProductGroupKey(product: Product) {
   const descriptionKey = normalizeProductDescriptionKey(product.description);
-  return descriptionKey || `product:${product.id}`;
+  const nameKey = (product.name || '').trim().toLowerCase();
+  if (!descriptionKey) return `product:${product.id}`;
+  return `${nameKey}|${descriptionKey}`;
 }
 
 export function getProductsInGroup(products: Product[], referenceProduct: Product) {
