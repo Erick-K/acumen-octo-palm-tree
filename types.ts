@@ -112,6 +112,7 @@ export interface Order {
   status: 'Pending' | 'Shipped' | 'Delivered' | 'Cancelled';
   date: string;
   isPaid?: boolean; // Payment status: true = Paid, false/undefined = Not Paid
+  isPrinted?: boolean;
 }
 
 export type TaskPriority = 'Low' | 'Medium' | 'High';

@@ -9,9 +9,10 @@ interface LPOProps {
   products: Product[];
   salesRep: User | undefined;
   onClose: () => void;
+  onPrinted?: (orderId: string) => void;
 }
 
-export const LPO: React.FC<LPOProps> = ({ order, client, products, salesRep, onClose }) => {
+export const LPO: React.FC<LPOProps> = ({ order, client, products, salesRep, onClose, onPrinted }) => {
   type EditableLpoItem = {
     id: string;
     productName: string;
@@ -115,6 +116,7 @@ export const LPO: React.FC<LPOProps> = ({ order, client, products, salesRep, onC
     setTimeout(() => {
       printWindow.print();
       printWindow.close();
+      onPrinted?.(order.id);
     }, 250);
   };
 

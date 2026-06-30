@@ -221,7 +221,7 @@ export const OrderForm: React.FC<OrderFormProps> = ({ clients, products, salesRe
 
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Pick Product Row</label>
           <p className="mt-1 mb-2 text-xs text-gray-500 dark:text-gray-400">
-            Each row is a separate inventory unit with its own price. Tap the exact row you want to order.
+            Same description, different prices: highest = cartons, middle = outers, lowest = pieces. Use Switch Unit to order in any tier.
           </p>
           <div className="max-h-56 overflow-y-auto border border-gray-200 rounded-md divide-y divide-gray-200 dark:border-gray-600 dark:divide-gray-600">
             {selectableProducts.length === 0 ? (

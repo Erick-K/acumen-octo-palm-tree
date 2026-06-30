@@ -217,8 +217,8 @@ export const ProductForm: React.FC<ProductFormProps> = ({ initialProduct, onSave
             />
           </div>
           <p className="sm:col-span-3 text-xs text-gray-500 dark:text-gray-400">
-            Products with the same description share stock. For orders in pieces, outers, and cartons, add one row per unit
-            (same description, different Inventory Unit and price). Example: 400 pieces at 5sx40x41.3 = 10 cartons.
+            Products with the same description share stock. Add one row per price — the highest price becomes cartons,
+            the second highest outers, and the lowest pieces (outer/carton ordering is automatic).
           </p>
         </div>
 

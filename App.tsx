@@ -3,7 +3,7 @@ import type { User, Client, Product, Order, OrderItem, Task, ClockLog, UserPrefe
 import type { OrderFormData } from './components/OrderForm';
 import { Page } from './types';
 import { MOCK_CLIENTS, MOCK_PRODUCTS, MOCK_ORDERS, MOCK_USERS, MOCK_TASKS } from './data/mockData';
-import { loadSharedAppState, mergeSharedAppData, saveSharedAppState, type SharedAppData } from './lib/sharedAppState';
+import { loadSharedAppState, saveSharedAppState, type SharedAppData } from './lib/sharedAppState';
 import { useGeolocation } from './hooks/useGeolocation';
 import { Login } from './components/Login';
 import { Sidebar } from './components/Sidebar';
@@ -35,7 +35,6 @@ const pageTitles: { [key in Page]: string } = {
 type ImportedClientData = Omit<Client, 'location' | 'visits'> & { address: string };
 const LOCAL_RESET_VERSION_KEY = 'appLocalResetVersion';
 const LOCAL_BRANDING_KEY = 'appBranding';
-const LOCAL_PRODUCTS_UPDATED_AT_KEY = 'productsUpdatedAt';
 const DEFAULT_APP_BRANDING: AppBranding = { appName: 'Acme Business Suite' };
 
 const isIsoTimestampNewer = (incoming: string | null, current: string | null) => {
@@ -45,23 +44,8 @@ const isIsoTimestampNewer = (incoming: string | null, current: string | null) =>
 };
 
 const clearDeviceCachedAppData = () => {
-  const keysToClear = ['users', 'clients', 'products', 'orders', 'tasks', 'clockLogs', 'liveLocations', LOCAL_PRODUCTS_UPDATED_AT_KEY];
+  const keysToClear = ['users', 'clients', 'products', 'orders', 'tasks', 'clockLogs', 'liveLocations'];
   keysToClear.forEach(key => localStorage.removeItem(key));
-};
-
-const readLocalProducts = (): Product[] => {
-  try {
-    const savedProducts = localStorage.getItem('products');
-    const parsed = savedProducts ? JSON.parse(savedProducts) : [];
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-};
-
-const shouldPreferLocalProducts = (sharedUpdatedAt: string | null) => {
-  const localProductsAt = localStorage.getItem(LOCAL_PRODUCTS_UPDATED_AT_KEY);
-  return Boolean(localProductsAt && isIsoTimestampNewer(localProductsAt, sharedUpdatedAt));
 };
 
 const App: React.FC = () => {
@@ -194,6 +178,29 @@ const App: React.FC = () => {
     });
   }, []);
 
+  const refreshSharedFromServer = useCallback(async () => {
+    const payload = await loadSharedAppState();
+    if (!payload?.data) return;
+
+    const isRemoteNewer =
+      !lastSharedUpdatedAtRef.current ||
+      Boolean(payload.updatedAt && isIsoTimestampNewer(payload.updatedAt, lastSharedUpdatedAtRef.current));
+
+    if (!isRemoteNewer) return;
+
+    if (payload.updatedAt) {
+      lastSharedUpdatedAtRef.current = payload.updatedAt;
+    }
+
+    const sharedResetVersion = payload.data.resetVersion || 'v1';
+    const localResetVersion = localStorage.getItem(LOCAL_RESET_VERSION_KEY) || resetVersion;
+    if (sharedResetVersion !== localResetVersion) {
+      clearDeviceCachedAppData();
+      localStorage.setItem(LOCAL_RESET_VERSION_KEY, sharedResetVersion);
+    }
+    applySharedData(payload.data);
+  }, [applySharedData, resetVersion]);
+
   useEffect(() => {
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
     const updateSystemTheme = (event: MediaQueryListEvent) => setIsSystemDark(event.matches);
@@ -215,7 +222,6 @@ const App: React.FC = () => {
       localStorage.setItem('users', JSON.stringify(users));
       localStorage.setItem('clients', JSON.stringify(clients));
       localStorage.setItem('products', JSON.stringify(products));
-      localStorage.setItem(LOCAL_PRODUCTS_UPDATED_AT_KEY, new Date().toISOString());
       localStorage.setItem('orders', JSON.stringify(orders));
       localStorage.setItem('tasks', JSON.stringify(tasks));
       localStorage.setItem('clockLogs', JSON.stringify(clockLogs));
@@ -244,31 +250,7 @@ const App: React.FC = () => {
   useEffect(() => {
     let cancelled = false;
 
-    loadSharedAppState()
-      .then(payload => {
-        if (cancelled || !payload?.data) return;
-        if (isIsoTimestampNewer(payload.updatedAt, lastSharedUpdatedAtRef.current)) {
-          lastSharedUpdatedAtRef.current = payload.updatedAt;
-        }
-        const sharedResetVersion = payload.data.resetVersion || 'v1';
-        const localResetVersion = localStorage.getItem(LOCAL_RESET_VERSION_KEY) || resetVersion;
-        if (sharedResetVersion !== localResetVersion) {
-          clearDeviceCachedAppData();
-          localStorage.setItem(LOCAL_RESET_VERSION_KEY, sharedResetVersion);
-          applySharedData(payload.data);
-          return;
-        }
-
-        const localProducts = readLocalProducts();
-        const merged = mergeSharedAppData(
-          { ...sharedDataRef.current, resetVersion: localResetVersion, products: localProducts },
-          payload.data
-        );
-        if (shouldPreferLocalProducts(payload.updatedAt)) {
-          merged.products = localProducts;
-        }
-        applySharedData(merged);
-      })
+    refreshSharedFromServer()
       .catch(error => {
         console.warn('Shared app data is unavailable; using local device data.', error);
       })
@@ -279,7 +261,7 @@ const App: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, [applySharedData, resetVersion]);
+  }, [refreshSharedFromServer]);
 
   useEffect(() => {
     if (!sharedStateReady) return;
@@ -304,28 +286,26 @@ const App: React.FC = () => {
     if (!sharedStateReady) return;
 
     const interval = window.setInterval(() => {
-      loadSharedAppState()
-        .then(payload => {
-          if (!payload?.data || !payload.updatedAt) return;
-          if (!isIsoTimestampNewer(payload.updatedAt, lastSharedUpdatedAtRef.current)) return;
-          lastSharedUpdatedAtRef.current = payload.updatedAt;
-          const localProducts = readLocalProducts();
-          const merged = mergeSharedAppData(
-            { ...sharedDataRef.current, products: localProducts },
-            payload.data
-          );
-          if (shouldPreferLocalProducts(payload.updatedAt)) {
-            merged.products = localProducts;
-          }
-          applySharedData(merged);
-        })
-        .catch(() => {
-          // Keep the app usable offline or when the Netlify function is unavailable.
-        });
-    }, 15000);
+      void refreshSharedFromServer().catch(() => {
+        // Keep the app usable offline or when Supabase is unavailable.
+      });
+    }, 8000);
 
     return () => window.clearInterval(interval);
-  }, [sharedStateReady, applySharedData]);
+  }, [sharedStateReady, refreshSharedFromServer]);
+
+  useEffect(() => {
+    if (!sharedStateReady) return;
+
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') {
+        void refreshSharedFromServer().catch(() => {});
+      }
+    };
+
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [sharedStateReady, refreshSharedFromServer]);
 
   useEffect(() => {
     if (!currentUser?.isClockedIn || !livePosition) return;
@@ -417,6 +397,7 @@ const App: React.FC = () => {
         } else {
             setCurrentPage(Page.Dashboard);
         }
+        void refreshSharedFromServer().catch(() => {});
     }
   };
 
@@ -589,28 +570,33 @@ const App: React.FC = () => {
       isPaid: newOrderData.isPaid ?? false,
     };
 
-    setOrders(prevOrders => [newOrder, ...prevOrders]);
+    setOrders(prevOrders => {
+      const nextOrders = [newOrder, ...prevOrders];
+      setProducts(prevProducts => {
+        const updatedProducts = prevProducts.map(product => ({ ...product }));
+        const affectedProductIds = new Set<number>();
 
-    setProducts(prevProducts => {
-      const updatedProducts = prevProducts.map(product => ({ ...product }));
-      const affectedProductIds = new Set<number>();
+        newOrder.items.forEach(item => {
+          const productIndex = updatedProducts.findIndex(p => p.id === item.productId);
+          if (productIndex !== -1) {
+            updatedProducts[productIndex] = {
+              ...updatedProducts[productIndex],
+              stock: updatedProducts[productIndex].stock - item.quantity,
+            };
+            affectedProductIds.add(item.productId);
+          }
+        });
 
-      newOrder.items.forEach(item => {
-        const productIndex = updatedProducts.findIndex(p => p.id === item.productId);
-        if (productIndex !== -1) {
-          updatedProducts[productIndex] = {
-            ...updatedProducts[productIndex],
-            stock: updatedProducts[productIndex].stock - item.quantity,
-          };
-          affectedProductIds.add(item.productId);
-        }
+        let alignedProducts = updatedProducts;
+        affectedProductIds.forEach(productId => {
+          alignedProducts = alignProductsByDescription(alignedProducts, productId);
+        });
+
+        lastSharedUpdatedAtRef.current = new Date().toISOString();
+        void persistSharedSnapshot({ orders: nextOrders, products: alignedProducts });
+        return alignedProducts;
       });
-
-      let alignedProducts = updatedProducts;
-      affectedProductIds.forEach(productId => {
-        alignedProducts = alignProductsByDescription(alignedProducts, productId);
-      });
-      return alignedProducts;
+      return nextOrders;
     });
 
     return newOrder;
@@ -620,34 +606,39 @@ const App: React.FC = () => {
     const originalOrder = orders.find(o => o.id === updatedOrder.id);
     if (!originalOrder) return;
 
-    setProducts(currentProducts => {
+    setOrders(prevOrders => {
+      const nextOrders = prevOrders.map(o => o.id === updatedOrder.id ? updatedOrder : o);
+      setProducts(currentProducts => {
         const productsMap = new Map<number, Product>(currentProducts.map(p => [p.id, p]));
         const affectedProductIds = new Set<number>();
 
         originalOrder.items.forEach(item => {
-            const p = productsMap.get(item.productId);
-            if (p) {
-              productsMap.set(p.id, { ...p, stock: p.stock + item.quantity });
-              affectedProductIds.add(item.productId);
-            }
+          const p = productsMap.get(item.productId);
+          if (p) {
+            productsMap.set(p.id, { ...p, stock: p.stock + item.quantity });
+            affectedProductIds.add(item.productId);
+          }
         });
         updatedOrder.items.forEach(item => {
-             const p = productsMap.get(item.productId);
-             if (p) {
-               productsMap.set(p.id, { ...p, stock: p.stock - item.quantity });
-               affectedProductIds.add(item.productId);
-             }
+          const p = productsMap.get(item.productId);
+          if (p) {
+            productsMap.set(p.id, { ...p, stock: p.stock - item.quantity });
+            affectedProductIds.add(item.productId);
+          }
         });
 
         let alignedProducts = Array.from(productsMap.values());
         affectedProductIds.forEach(productId => {
           alignedProducts = alignProductsByDescription(alignedProducts, productId);
         });
+        alignedProducts = alignedProducts.sort((a, b) => a.id - b.id);
 
-        return alignedProducts.sort((a, b) => a.id - b.id);
+        lastSharedUpdatedAtRef.current = new Date().toISOString();
+        void persistSharedSnapshot({ orders: nextOrders, products: alignedProducts });
+        return alignedProducts;
+      });
+      return nextOrders;
     });
-
-    setOrders(prevOrders => prevOrders.map(o => o.id === updatedOrder.id ? updatedOrder : o));
   };
 
   const handleAddClientVisit = (clientId: number, notes: string) => {
@@ -726,7 +717,12 @@ const App: React.FC = () => {
         ...draft,
         id: products.length > 0 ? Math.max(...products.map(p => p.id)) + 1 : 1,
     };
-    setProducts(prevProducts => alignProductsByDescription([newProduct, ...prevProducts], newProduct.id));
+    setProducts(prevProducts => {
+      const nextProducts = alignProductsByDescription([newProduct, ...prevProducts], newProduct.id);
+      lastSharedUpdatedAtRef.current = new Date().toISOString();
+      void persistSharedSnapshot({ products: nextProducts });
+      return nextProducts;
+    });
   };
 
   const handleUpdateProduct = (updatedProduct: Product) => {
@@ -740,7 +736,10 @@ const App: React.FC = () => {
       const nextProducts = prevProducts.map(product =>
         product.id === normalizedUpdated.id ? normalizedUpdated : product
       );
-      return alignProductsByDescription(nextProducts, normalizedUpdated.id);
+      const aligned = alignProductsByDescription(nextProducts, normalizedUpdated.id);
+      lastSharedUpdatedAtRef.current = new Date().toISOString();
+      void persistSharedSnapshot({ products: aligned });
+      return aligned;
     });
   };
 
@@ -777,18 +776,15 @@ const App: React.FC = () => {
   };
 
   const handleDeleteOrder = (orderId: string) => {
-    setOrders(prevOrders => prevOrders.filter(o => o.id !== orderId));
+    const nextOrders = orders.filter(o => o.id !== orderId);
+    lastSharedUpdatedAtRef.current = new Date().toISOString();
+    setOrders(nextOrders);
+    void persistSharedSnapshot({ orders: nextOrders });
   };
 
   const handleDeleteProduct = (productId: number) => {
-    const deletedAt = new Date().toISOString();
     const nextProducts = products.filter(product => product.id !== productId);
-
-    lastSharedUpdatedAtRef.current = deletedAt;
-    localStorage.setItem('products', JSON.stringify(nextProducts));
-    localStorage.setItem(LOCAL_PRODUCTS_UPDATED_AT_KEY, deletedAt);
-    sharedDataRef.current = { ...sharedDataRef.current, products: nextProducts };
-
+    lastSharedUpdatedAtRef.current = new Date().toISOString();
     setProducts(nextProducts);
     void persistSharedSnapshot({ products: nextProducts });
   };

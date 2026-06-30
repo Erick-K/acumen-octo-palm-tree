@@ -66,6 +66,46 @@ export function getProductGroupKey(product: Product) {
   return `${nameKey}|${descriptionKey}`;
 }
 
+/** Highest price → cartons, second → outers, lowest → pieces (within a description group). */
+export function packagingUnitForPriceRank(rank: number, groupSize: number): PackagingUnit {
+  if (groupSize <= 1) return 'pieces';
+  if (groupSize === 2) return rank === 0 ? 'outers' : 'pieces';
+  if (rank === 0) return 'cartons';
+  if (rank === 1) return 'outers';
+  return 'pieces';
+}
+
+/** Assign inventory unit from price rank for products that share a description. */
+export function assignPackagingUnitsByPrice(products: Product[]): Product[] {
+  const groups = new Map<string, Product[]>();
+
+  for (const product of products) {
+    const key = getProductGroupKey(product);
+    if (key.startsWith('product:')) continue;
+    const group = groups.get(key) || [];
+    group.push(product);
+    groups.set(key, group);
+  }
+
+  const unitByProductId = new Map<number, PackagingUnit>();
+  for (const group of groups.values()) {
+    const sorted = [...group].sort((a, b) => {
+      const priceDiff = b.price - a.price;
+      if (priceDiff !== 0) return priceDiff;
+      return a.id - b.id;
+    });
+    sorted.forEach((product, rank) => {
+      unitByProductId.set(product.id, packagingUnitForPriceRank(rank, sorted.length));
+    });
+  }
+
+  return products.map(product => {
+    const unit = unitByProductId.get(product.id);
+    if (!unit) return product;
+    return { ...product, packagingUnit: unit };
+  });
+}
+
 export function getProductsInGroup(products: Product[], referenceProduct: Product) {
   const key = getProductGroupKey(referenceProduct);
   if (key.startsWith('product:')) return [referenceProduct];
@@ -220,7 +260,7 @@ export function alignProductsByDescription(products: Product[], sourceProductId?
     canonicalPieceCount.set(key, getCanonicalPieceCount(group, sourceProductId));
   }
 
-  return normalizedProducts.map(product => {
+  const stockAligned = normalizedProducts.map(product => {
     const key = normalizeProductDescriptionKey(product.description);
     if (!key) return product;
 
@@ -235,6 +275,8 @@ export function alignProductsByDescription(products: Product[], sourceProductId?
       stock: Number(fromPieceCount(pieceCount, product).toFixed(2)),
     };
   });
+
+  return assignPackagingUnitsByPrice(stockAligned);
 }
 
 /** Shown in lists when description has no embedded pack size. */

@@ -218,6 +218,13 @@ export const Orders: React.FC<OrdersProps> = ({ orders, clients, products, sales
         }
     };
 
+    const handleOrderPrinted = (orderId: string) => {
+        const order = orders.find(o => o.id === orderId);
+        if (!order || order.isPrinted) return;
+        onUpdateOrder({ ...order, isPrinted: true });
+        setOrderForLPO(prev => (prev?.id === orderId ? { ...prev, isPrinted: true } : prev));
+    };
+
     const handleExportCSV = () => {
         if (sortedOrders.length === 0) {
             alert("No orders to export.");
@@ -382,8 +389,15 @@ export const Orders: React.FC<OrdersProps> = ({ orders, clients, products, sales
                         const client = clients.find(c => c.id === order.clientId);
                         const isEditable = !['Shipped', 'Delivered'].includes(order.status);
                         return (
-                        <tr key={order.id}>
-                            <td className="px-6 py-4 text-sm font-medium text-gray-900 whitespace-nowrap dark:text-white">{order.id}</td>
+                        <tr
+                            key={order.id}
+                            className={order.isPrinted ? 'bg-red-50 dark:bg-red-950/40' : undefined}
+                        >
+                            <td className={`px-6 py-4 text-sm font-medium whitespace-nowrap ${
+                                order.isPrinted
+                                    ? 'text-red-700 dark:text-red-300'
+                                    : 'text-gray-900 dark:text-white'
+                            }`}>{order.id}</td>
                             <td className="px-6 py-4 text-sm text-gray-500 whitespace-nowrap dark:text-gray-400">{client?.company || 'N/A'}</td>
                             <td className="px-6 py-4 text-sm text-gray-500 whitespace-nowrap dark:text-gray-400">{order.date}</td>
                             <td className="px-6 py-4 text-sm text-gray-500 whitespace-nowrap dark:text-gray-400">{formatKes(order.total)}</td>
@@ -478,6 +492,7 @@ export const Orders: React.FC<OrdersProps> = ({ orders, clients, products, sales
             products={products}
             salesRep={salesReps.find(r => r.id === orderForLPO.salesRepId)}
             onClose={() => setOrderForLPO(null)}
+            onPrinted={handleOrderPrinted}
         />
     )}
     </>
